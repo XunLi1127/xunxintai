@@ -697,7 +697,7 @@ ipcMain.handle('select-directory', async () => {
 ipcMain.handle('export-workspace', async (event, workspaceId, contextMarkdown, defaultFilename) => {
     try {
         const result = await dialog.showSaveDialog(mainWindow, {
-            title: '瀵煎嚭妯″瀷瀵硅瘽宸ヤ綔绌洪棿',
+            title: '导出模型对话工作空间',
             defaultPath: defaultFilename,
             filters: [
                 { name: 'Zip Archives', extensions: ['zip'] },
@@ -717,10 +717,10 @@ ipcMain.handle('export-workspace', async (event, workspaceId, contextMarkdown, d
             fs.mkdirSync(workspacePath, { recursive: true });
         }
 
-        // 鎶婂墠娈靛綊闆嗙殑瀹屾暣鏂囨湰涓婁笅鏂囨斁杩涘幓涓€璧峰綊妗?
+        // 将已整理的完整对话上下文一并写入工作空间归档。
         fs.writeFileSync(path.join(workspacePath, 'chat_context.md'), contextMarkdown || '', 'utf-8');
 
-        // 鎵ц寮傛 zip 鎵撳寘淇濆瓨
+        // 异步创建并保存 zip 归档。
         return await new Promise((resolve, reject) => {
             const output = fs.createWriteStream(zipDest);
             const archive = archiver('zip', {

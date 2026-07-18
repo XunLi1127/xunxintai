@@ -10,6 +10,10 @@ describe('Windows MVP 中文主路径', () => {
     expect(source).toContain("label: visible ? '隐藏窗口' : '显示窗口'");
     expect(source).toContain("label: '退出'");
     expect(source).toContain("content: '已最小化到系统托盘，右键托盘图标可以退出应用。'");
+    expect(source).toContain("title: '导出模型对话工作空间'");
+    expect(source).not.toContain('瀵煎嚭妯″瀷瀵硅瘽宸ヤ綔绌洪棿');
+    expect(source).not.toContain('鎶婂墠娈靛綊闆嗙殑');
+    expect(source).not.toContain('鎵ц寮傛 zip');
     expect(source).not.toContain('纭繚');
     expect(source).not.toContain('灏嗘暣');
   });
