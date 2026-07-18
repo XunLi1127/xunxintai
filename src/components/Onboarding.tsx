@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { FolderOpen, KeyRound, Monitor, ServerCog } from 'lucide-react';
+import { getThemeController } from '../theme/runtime';
 import ClaudeLogo from './ClaudeLogo';
 
 interface OnboardingProps {
@@ -15,9 +16,21 @@ const stepTitle = [
   { title: '选择工作目录', subtitle: 'Claude 会优先在这里打开和分析你的项目。' },
 ];
 
+function getInitialThemeMode(): ThemeMode {
+  const controller = getThemeController();
+  if (controller.getPreference() === 'system') return 'system';
+  return controller.getActiveTheme().mode === 'light' ? 'light' : 'dark';
+}
+
+function commitThemeMode(theme: ThemeMode): void {
+  getThemeController().commitTheme(
+    theme === 'system' ? 'system' : theme === 'light' ? 'catppuccin-latte' : 'catppuccin-mocha',
+  );
+}
+
 const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
   const [step, setStep] = useState(0);
-  const [theme, setTheme] = useState<ThemeMode>((localStorage.getItem('theme') as ThemeMode) || 'system');
+  const [theme, setTheme] = useState<ThemeMode>(getInitialThemeMode);
   const [mode, setMode] = useState<ApiMode>(
     localStorage.getItem('user_mode') === 'selfhosted' ? 'selfhosted' : 'official',
   );
@@ -35,17 +48,6 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     if (api?.resizeWindow) api.resizeWindow(760, 620);
   }, []);
 
-  useEffect(() => {
-    const root = document.documentElement;
-    if (theme === 'dark') root.classList.add('dark');
-    else if (theme === 'light') root.classList.remove('dark');
-    else {
-      if (window.matchMedia('(prefers-color-scheme: dark)').matches) root.classList.add('dark');
-      else root.classList.remove('dark');
-    }
-    localStorage.setItem('theme', theme);
-  }, [theme]);
-
   const handleBrowse = async () => {
     const api = (window as any).electronAPI;
     if (api?.selectDirectory) {
@@ -58,7 +60,6 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     const api = (window as any).electronAPI;
     if (api?.resizeWindow) api.resizeWindow(1300, 780);
 
-    localStorage.setItem('theme', theme);
     localStorage.setItem('user_mode', mode === 'official' ? 'clawparrot' : 'selfhosted');
     localStorage.setItem('onboarding_done', 'true');
     localStorage.removeItem('cross_mode_overrides');
@@ -128,7 +129,10 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
                 return (
                   <button
                     key={item.id}
-                    onClick={() => setTheme(item.id)}
+                    onClick={() => {
+                      commitThemeMode(item.id);
+                      setTheme(item.id);
+                    }}
                     className={`rounded-2xl border px-5 py-5 text-left transition-all ${
                       active ? 'border-[#2E7CF6]/45 bg-[#2E7CF6]/10' : 'border-claude-border hover:bg-claude-hover'
                     }`}

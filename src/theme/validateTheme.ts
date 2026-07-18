@@ -22,8 +22,8 @@ export function validateTheme(theme: ThemeDefinition): string[] {
   if (theme.mode === 'high-contrast' && contrastRatio(theme.tokens.textPrimary, theme.tokens.canvas) < 7) {
     errors.push('High contrast textPrimary must have at least 7:1 contrast against canvas');
   }
-  if (theme.mode === 'high-contrast' && theme.tokens.focus.toLowerCase() === theme.tokens.canvas.toLowerCase()) {
-    errors.push('High contrast focus must differ from canvas');
+  if (theme.mode === 'high-contrast' && contrastRatio(theme.tokens.focus, theme.tokens.canvas) < 3) {
+    errors.push('High contrast focus must have at least 3:1 contrast against canvas');
   }
   return errors;
 }

@@ -12,10 +12,20 @@ function parseColor(color: string): [number, number, number, number] {
   ];
 }
 
-function luminance(color: string): number {
-  const [red, green, blue, alpha] = parseColor(color);
+function composite(
+  [red, green, blue, alpha]: [number, number, number, number],
+  background: [number, number, number],
+): [number, number, number] {
+  return [
+    (red * alpha) + (background[0] * (1 - alpha)),
+    (green * alpha) + (background[1] * (1 - alpha)),
+    (blue * alpha) + (background[2] * (1 - alpha)),
+  ];
+}
+
+function luminance([red, green, blue]: [number, number, number]): number {
   const channels = [red, green, blue].map(channel => {
-    const value = ((channel * alpha) + (255 * (1 - alpha))) / 255;
+    const value = channel / 255;
     return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
   });
   return (0.2126 * channels[0]) + (0.7152 * channels[1]) + (0.0722 * channels[2]);
@@ -26,8 +36,14 @@ export function isHexColor(color: unknown): color is string {
 }
 
 export function contrastRatio(foreground: string, background: string): number {
-  const foregroundLuminance = luminance(foreground);
-  const backgroundLuminance = luminance(background);
+  const foregroundColor = parseColor(foreground);
+  const backgroundColor = parseColor(background);
+  if (backgroundColor[3] < 1) return 1;
+
+  const opaqueBackground: [number, number, number] = [backgroundColor[0], backgroundColor[1], backgroundColor[2]];
+  const renderedForeground = composite(foregroundColor, opaqueBackground);
+  const foregroundLuminance = luminance(renderedForeground);
+  const backgroundLuminance = luminance(opaqueBackground);
   const lighter = Math.max(foregroundLuminance, backgroundLuminance);
   const darker = Math.min(foregroundLuminance, backgroundLuminance);
   return (lighter + 0.05) / (darker + 0.05);

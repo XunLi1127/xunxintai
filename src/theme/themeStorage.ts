@@ -52,8 +52,9 @@ export function createThemeController(options: ThemeControllerOptions): ThemeCon
     },
     cancelPreview() {
       if (!previewBase) return;
-      applyTheme(previewBase, root);
-      activeTheme = previewBase;
+      const restoredTheme = preference === 'system' ? resolveTheme('system', media.matches) : previewBase;
+      applyTheme(restoredTheme, root);
+      activeTheme = restoredTheme;
       previewBase = undefined;
     },
     dispose() {

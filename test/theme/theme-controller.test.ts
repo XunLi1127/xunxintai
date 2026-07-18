@@ -91,6 +91,18 @@ describe('theme controller', () => {
     expect(root.dataset.themeId).toBe('tinted-default-light');
   });
 
+  it('cancels a system preview to the latest system theme after media changes', () => {
+    const { controller, root, media } = setup();
+    controller.previewTheme('tinted-default-light');
+
+    media.emit(true);
+    controller.cancelPreview();
+
+    expect(controller.getPreference()).toBe('system');
+    expect(controller.getActiveTheme().id).toBe('catppuccin-mocha');
+    expect(root.dataset.themeId).toBe('catppuccin-mocha');
+  });
+
   it('removes its media listener on dispose', () => {
     const { controller, media } = setup();
     expect(media.listener).toBeTypeOf('function');

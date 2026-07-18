@@ -2,12 +2,12 @@ import './src/index.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './src/App';
-import { createThemeController } from './src/theme/themeStorage';
+import { initializeThemeController } from './src/theme/runtime';
 
 const rootElement = document.getElementById('root');
 
 // Hydrate theme variables before the first React render to avoid a color flash.
-export const themeController = createThemeController({
+export const themeController = initializeThemeController({
   root: document.documentElement,
   storage: localStorage,
   media: window.matchMedia('(prefers-color-scheme: dark)'),

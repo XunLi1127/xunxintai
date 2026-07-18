@@ -66,6 +66,16 @@ describe('built-in semantic themes', () => {
   });
 });
 
+describe('color contrast', () => {
+  it('composites translucent foregrounds over the actual opaque background', () => {
+    expect(contrastRatio('#ffffff40', '#000000')).toBeCloseTo(2.03, 2);
+  });
+
+  it('uses a conservative 1:1 lower bound for a background with an unknown backdrop', () => {
+    expect(contrastRatio('#000000', '#ffffff80')).toBe(1);
+  });
+});
+
 describe('theme validation and DOM application', () => {
   it('writes every xun token and both theme attributes', () => {
     const root = document.createElement('html');
@@ -94,5 +104,15 @@ describe('theme validation and DOM application', () => {
 
     expect(() => applyTheme(invalid, root)).toThrow('Invalid theme "invalid"');
     expect(root.outerHTML).toBe(before);
+  });
+
+  it('rejects a high-contrast focus color below 3:1 against canvas', () => {
+    const highContrast = BUILTIN_THEMES.find(theme => theme.id === 'xun-high-contrast')!;
+    const invalid: ThemeDefinition = {
+      ...highContrast,
+      tokens: { ...highContrast.tokens, focus: '#333333' },
+    };
+
+    expect(validateTheme(invalid)).toContain('High contrast focus must have at least 3:1 contrast against canvas');
   });
 });
