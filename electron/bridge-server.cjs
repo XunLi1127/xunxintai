@@ -7417,52 +7417,20 @@ You have the following skills available. When a user's request matches a skill's
         ? path.join(process.resourcesPath, 'engine')
         : path.join(__dirname, '..', 'engine');
     const engineCli = path.join(engineDir, 'src', 'entrypoints', 'cli.tsx');
-    const engineEnv = path.join(engineDir, '.env');
+    const engineEnv = fs.existsSync(path.join(engineDir, '.env'))
+        ? path.join(engineDir, '.env')
+        : path.join(engineDir, '.env.defaults');
 
-    // Resolve Bun executable: bundled 鈫?user-installed 鈫?PATH
-    function findBunExe() {
-        const bundled = path.join(engineDir, 'bin', process.platform === 'win32' ? 'bun.exe' : 'bun');
-        if (fs.existsSync(bundled)) return bundled;
-        const userInstalled = process.platform === 'win32'
-            ? path.join(os.homedir(), '.bun', 'bin', 'bun.exe')
-            : path.join(os.homedir(), '.bun', 'bin', 'bun');
-        if (fs.existsSync(userInstalled)) return userInstalled;
-        return 'bun'; // fallback to PATH
-    }
-    const bunExePath = findBunExe();
-    console.log('[Engine] Bun:', bunExePath, 'exists:', fs.existsSync(bunExePath));
+    const { resolveBun, resolveGitBash } = require('./bridge-runtime.cjs');
+    const bunExePath = resolveBun({ isPackaged: isPacked, engineDir, platform: process.platform, homedir: os.homedir(), exists: fs.existsSync });
+    console.log('[Engine] Bun:', bunExePath ? (bunExePath === 'bun' ? 'PATH fallback (development)' : 'available') : 'bundled runtime missing');
 
     // Detect git-bash on Windows (Claude Code SDK requires it).
     // Returns a path to bash.exe, or null if not found.
-    function findGitBashPath() {
-        if (process.platform !== 'win32') return null;
-        if (process.env.CLAUDE_CODE_GIT_BASH_PATH && fs.existsSync(process.env.CLAUDE_CODE_GIT_BASH_PATH)) {
-            return process.env.CLAUDE_CODE_GIT_BASH_PATH;
-        }
-        const candidates = [
-            'C:\\Program Files\\Git\\bin\\bash.exe',
-            'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
-            path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Git', 'bin', 'bash.exe'),
-            process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs', 'Git', 'bin', 'bash.exe'),
-            process.env.ProgramW6432 && path.join(process.env.ProgramW6432, 'Git', 'bin', 'bash.exe'),
-        ].filter(Boolean);
-        for (const candidate of candidates) {
-            if (fs.existsSync(candidate)) return candidate;
-        }
-        // Fallback: try `where git` and derive bash path from it
-        try {
-            const out = require('child_process').execSync('where git', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-            const gitExe = out.split(/\r?\n/).map(s => s.trim()).filter(Boolean)[0];
-            if (gitExe) {
-                const bashFromGit = path.join(path.dirname(path.dirname(gitExe)), 'bin', 'bash.exe');
-                if (fs.existsSync(bashFromGit)) return bashFromGit;
-            }
-        } catch (_) {}
-        return null;
-    }
-    const gitBashPath = findGitBashPath();
+    const gitBashDiagnostic = resolveGitBash({ platform: process.platform, env: process.env, homedir: os.homedir(), exists: fs.existsSync });
+    const gitBashPath = gitBashDiagnostic.ok ? gitBashDiagnostic.path : null;
     if (process.platform === 'win32') {
-        console.log('[Engine] git-bash:', gitBashPath || 'NOT FOUND (Claude Code SDK will fail)');
+        console.log('[Engine] git-bash:', gitBashPath ? 'available' : gitBashDiagnostic.code);
     }
 
     // Load engine .env so bridge-server can use the same API config (for vision direct API calls)
@@ -7930,6 +7898,8 @@ You have the following skills available. When a user's request matches a skill's
     }
 
     function spawnPersistentEngine(convId, conv, config) {
+        if (!bunExePath) throw Object.assign(new Error('缺少应用内置 Bun 运行时，请重新安装洵心台。'), { code: 'ENGINE_BUN_MISSING' });
+        if (!gitBashDiagnostic.ok) throw Object.assign(new Error(gitBashDiagnostic.message), { code: gitBashDiagnostic.code });
         const { modelId, apiKey, baseUrl, apiFormat, sysPrompt } = config;
         evictOldestEngine();
         const claudeDir = path.join(os.homedir(), '.claude');
@@ -8388,7 +8358,7 @@ You have the following skills available. When a user's request matches a skill's
                     } catch (err) {
             pendingImageBlocks.delete(conversation_id);
             console.error('[Chat] Error:', (err.message || '').slice(0, 300));
-            sendSSE({ type: 'error', error: err.message || 'Engine error' });
+            sendSSE({ type: 'error', error: err.message || 'Engine error', ...(err.code ? { code: err.code } : {}) });
             endStream(conversation_id);
         }
     });

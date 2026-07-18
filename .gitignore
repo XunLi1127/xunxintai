@@ -28,7 +28,10 @@ electron/secrets.json
 
 # Engine dependencies (install separately with: cd engine && bun install)
 engine/node_modules/
-# engine/.env is committed (no secrets, only public config)
+engine/bin/
+.cache/runtime/
+# Only engine/.env.defaults is committed; local overrides stay private.
+engine/.env
 engine/bun.lockb
 
 # Editor

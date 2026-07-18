@@ -30,6 +30,12 @@
 C:\Users\Administrator\AppData\Local\Programs\洵心台\
 ```
 
+### Windows 运行前置条件
+
+- 安装包已经内置并固定校验 Bun 运行时，无需用户单独安装 Bun。
+- 对话引擎当前仍需要 [Git for Windows](https://git-scm.com/download/win) 提供 Git Bash；未找到时会返回 `ENGINE_GIT_BASH_MISSING` 和中文安装提示，不会记录 PATH、环境变量或密钥值。
+- 构建 Windows 包前运行 `npm run runtime:prepare`；离线重跑可设置 `XUNXINTAI_RUNTIME_CACHE` 指向已经预热且校验通过的缓存目录。
+
 ## 当前重点
 
 - `P0`：工作区、命令执行、权限、预览稳定性

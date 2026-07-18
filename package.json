@@ -23,11 +23,14 @@
     "check": "npm test && npm run test:electron && npm run build",
     "electron:dev": "vite build && electron .",
     "electron:build": "vite build && electron-builder",
-    "electron:build:win": "vite build && electron-builder --win",
+    "runtime:prepare": "node scripts/prepare-runtime.cjs --platform win32 --arch x64",
+    "runtime:check": "node scripts/check-runtime.cjs --platform win32 --arch x64",
+    "electron:build:win": "npm run runtime:prepare && npm run runtime:check && vite build && electron-builder --win",
     "electron:build:mac": "vite build && electron-builder --mac",
     "electron:build:linux": "vite build && electron-builder --linux"
   },
   "build": {
+    "beforePack": "scripts/before-pack.cjs",
     "appId": "com.xunxintai.desktop",
     "productName": "洵心台",
     "directories": {
@@ -85,8 +88,12 @@
         "to": "engine/vision-helper.ts"
       },
       {
-        "from": "engine/.env",
-        "to": "engine/.env"
+        "from": "engine/bun.lock",
+        "to": "engine/bun.lock"
+      },
+      {
+        "from": "engine/.env.defaults",
+        "to": "engine/.env.defaults"
       },
       {
         "from": "public/favicon.ico",
