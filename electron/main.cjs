@@ -185,7 +185,7 @@ function createTray() {
     const trayIcon = getTrayIcon();
     tray = new Tray(trayIcon);
     tray.setImage(trayIcon);
-    tray.setToolTip('Claude Desktop CN');
+    tray.setToolTip('洵心台');
 
     const refreshTrayMenu = () => {
         const visible = !!mainWindow && mainWindow.isVisible();
@@ -419,7 +419,7 @@ function createWindow() {
                 tray.setContextMenu(Menu.buildFromTemplate(template));
                 if (!hasShownTrayHint && process.platform === 'win32' && typeof tray.displayBalloon === 'function') {
                     tray.displayBalloon({
-                        title: 'Claude Desktop CN',
+                        title: '洵心台',
                         content: '已最小化到系统托盘，右键托盘图标可以退出应用。',
                         iconType: 'info',
                     });
@@ -440,7 +440,7 @@ if (isWindows) {
 }
 
 app.whenReady().then(() => {
-    app.setAppUserModelId('com.claude.desktop.cn');
+    app.setAppUserModelId('com.xunxintai.desktop');
     // macOS: clear quarantine flags on bundled bun binary. Downloaded .dmg/.zip
     // files get Apple's com.apple.quarantine xattr, and since our bun binary is
     // unsigned, Gatekeeper silently blocks execution 鈥?the engine subprocess just

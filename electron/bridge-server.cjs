@@ -5153,7 +5153,7 @@ $literal = ConvertTo-HotkeyLiteral $keys
                 params: {
                     protocolVersion: '2024-11-05',
                     capabilities: {},
-                    clientInfo: { name: 'Claude Desktop CN', version: 'local' },
+                    clientInfo: { name: '洵心台', version: 'local' },
                 },
             });
         });

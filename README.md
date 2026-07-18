@@ -1,34 +1,33 @@
-# Claude Desktop CN
+# 洵心台
 
 <p align="center">
-  <img src="docs/assets/readme-hero.svg" alt="Claude Desktop CN" width="100%" />
+  <img src="docs/assets/readme-hero.svg" alt="洵心台" width="100%" />
 </p>
 
 <p align="center">
-  <a href="https://github.com/Qiao-920/claude-desktop-cn/releases"><img alt="release" src="https://img.shields.io/github/v/release/Qiao-920/claude-desktop-cn?label=release&color=C6613F"></a>
-  <a href="https://github.com/Qiao-920/claude-desktop-cn/actions"><img alt="build" src="https://img.shields.io/github/actions/workflow/status/Qiao-920/claude-desktop-cn/build-release.yml?branch=main&label=build"></a>
+  <a href="https://github.com/XunLi1127/xunxintai"><img alt="repository" src="https://img.shields.io/badge/repository-XunLi1127%2Fxunxintai-C6613F"></a>
   <img alt="platform" src="https://img.shields.io/badge/platform-Windows-497BA7">
   <img alt="language" src="https://img.shields.io/badge/UI-%E4%B8%AD%E6%96%87%20%2F%20English-6A8F5D">
 </p>
 
-面向中文用户持续维护的 Claude Desktop 中文桌面分支，基于 [`pretend1111/claude-desktop-app`](https://github.com/pretend1111/claude-desktop-app) 二次整理、汉化和增强。
+洵心台是面向中文用户的 AI 桌面工作台，当前专注于本地工作区、权限守卫、命令执行和 Artifact 预览。
+
+本项目派生自 Claude Desktop CN，并继续保留上游 [`pretend1111/claude-desktop-app`](https://github.com/pretend1111/claude-desktop-app) 的归属与开源许可边界。
 
 这个分支的目标不是简单换皮，而是把原本零散、半占位的能力逐步打磨成一套可维护、可发布、可日用的桌面工作流：中文聊天、项目上下文、GitHub 导入、本地 Code 工作区、权限守卫、命令执行和 Artifact 预览。
 
-## 下载
+## 构建
 
 | 项目 | 内容 |
 | --- | --- |
 | 当前版本 | `1.6.31` |
-| Windows 安装包 | `Claude-Desktop-CN-Setup-1.6.31.exe` |
-| 下载页面 | [GitHub Releases](https://github.com/Qiao-920/claude-desktop-cn/releases) |
-| 本轮更新说明 | [Claude Desktop CN v1.6.31](docs/releases/v1.6.31-cn.md) |
-| 产品任务清单 | [cc-haha 能力对照与 Claude Desktop CN 产品任务清单](docs/cc-haha-capability-map.md) |
+| Windows 安装包命名 | `Xunxintai-Setup-${version}-${arch}.exe` |
+| 代码仓库 | [XunLi1127/xunxintai](https://github.com/XunLi1127/xunxintai) |
 
 默认安装路径通常是：
 
 ```text
-C:\Users\Administrator\AppData\Local\Programs\claude-desktop\
+C:\Users\Administrator\AppData\Local\Programs\洵心台\
 ```
 
 ## 当前重点
@@ -95,4 +94,4 @@ npm run electron:build:win
 
 ## 仓库
 
-- GitHub：[Qiao-920/claude-desktop-cn](https://github.com/Qiao-920/claude-desktop-cn)
+- GitHub：[XunLi1127/xunxintai](https://github.com/XunLi1127/xunxintai)

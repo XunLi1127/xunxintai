@@ -1,15 +1,15 @@
 {
-  "name": "claude-desktop",
+  "name": "xunxintai",
   "private": true,
   "version": "1.6.31",
-  "description": "Claude Desktop - AI assistant with native capabilities",
+  "description": "洵心台 - 具备本地原生能力的 AI 桌面助手",
   "author": {
     "name": "Qiao-920",
     "email": "Qiao-920@users.noreply.github.com"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Qiao-920/claude-desktop-cn.git"
+    "url": "https://github.com/XunLi1127/xunxintai.git"
   },
   "type": "module",
   "main": "electron/main.cjs",
@@ -28,8 +28,8 @@
     "electron:build:linux": "vite build && electron-builder --linux"
   },
   "build": {
-    "appId": "com.claude.desktop",
-    "productName": "Claude Desktop CN",
+    "appId": "com.xunxintai.desktop",
+    "productName": "洵心台",
     "directories": {
       "output": "release"
     },
@@ -99,11 +99,11 @@
     ],
     "publish": {
       "provider": "github",
-      "owner": "Qiao-920",
-      "repo": "claude-desktop-cn"
+      "owner": "XunLi1127",
+      "repo": "xunxintai"
     },
     "win": {
-      "artifactName": "Claude-Desktop-CN-Setup-${version}.${ext}",
+      "artifactName": "Xunxintai-Setup-${version}-${arch}.${ext}",
       "target": [
         "nsis"
       ],
