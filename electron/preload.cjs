@@ -33,3 +33,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onUpdateStatus: (callback) => ipcRenderer.on('update-status', (_, status) => callback(status)),
     installUpdate: () => ipcRenderer.invoke('install-update'),
 });
+
+contextBridge.exposeInMainWorld('themeApi', Object.freeze({
+    selectImport: () => ipcRenderer.invoke('theme:select-import'),
+    inspectImport: (selectionId) => ipcRenderer.invoke('theme:inspect-import', selectionId),
+    installImport: (inspectionId) => ipcRenderer.invoke('theme:install-import', inspectionId),
+    listInstalled: () => ipcRenderer.invoke('theme:list-installed'),
+    removeInstalled: (themeId) => ipcRenderer.invoke('theme:remove-installed', themeId),
+}));

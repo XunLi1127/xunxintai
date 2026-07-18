@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const archiver = require('archiver');
 const { autoUpdater } = require('electron-updater');
+const { createThemeImportService } = require('./theme-import/service.cjs');
 // Load build-time secrets before requiring bridge-server so they're available on process.env.
 // secrets.json is gitignored 鈥?populated by CI at build time from GitHub Actions secrets.
 // In dev just export the env vars in your shell (or put them in this file locally).
@@ -559,6 +560,18 @@ ipcMain.handle('resize-window', (_, width, height) => {
         mainWindow.center();
     }
 });
+
+const themeImportService = createThemeImportService({
+    dialog,
+    windowProvider: () => mainWindow,
+    tempRoot: app.getPath('temp'),
+    themesRoot: path.join(app.getPath('userData'), 'themes'),
+});
+ipcMain.handle('theme:select-import', () => themeImportService.selectImport());
+ipcMain.handle('theme:inspect-import', (_, selectionId) => themeImportService.inspectImport(selectionId));
+ipcMain.handle('theme:install-import', (_, inspectionId) => themeImportService.installImport(inspectionId));
+ipcMain.handle('theme:list-installed', () => themeImportService.listInstalled());
+ipcMain.handle('theme:remove-installed', (_, themeId) => themeImportService.removeInstalled(themeId));
 
 // Open the folder containing the given file path in system explorer
 // Returns true if opened, false if file/folder not found
