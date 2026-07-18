@@ -2226,7 +2226,7 @@ const SettingsPage = ({ onClose }: SettingsPageProps) => {
             <SectionCard title="关于" subtitle="应用标识与版本信息。">
               <div className="flex items-center justify-between rounded-xl border border-claude-border bg-claude-bg px-4 py-3">
                 <div>
-                  <div className="text-[14px] font-medium text-claude-text">claude-desktop-cn</div>
+                  <div className="text-[14px] font-medium text-claude-text">洵心台</div>
                   <div className="mt-1 text-[12px] text-claude-textSecondary">Windows 桌面客户端</div>
                 </div>
                 <div className="text-[13px] font-mono text-claude-text">v{__APP_VERSION__}</div>

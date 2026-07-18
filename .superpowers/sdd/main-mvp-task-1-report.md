@@ -4,6 +4,7 @@
 
 - RED：新增 `test/brand/brand-identity.test.ts`，首次聚焦运行 4 项全部失败，分别命中旧 package、页面/metadata、Electron/MCP 和 README 身份。
 - GREEN：最小修改后聚焦测试 4/4 通过。
+- 复审补充：先为 Settings “关于”卡片增加一项真实文件断言，确认该新测试因可见的 `claude-desktop-cn` 单独 RED；仅替换该处文本后，聚焦测试 5/5 GREEN。
 
 ## 修改文件
 
@@ -11,12 +12,13 @@
 - `index.html`、`metadata.json`
 - `electron/main.cjs`、`electron/bridge-server.cjs`
 - `README.md`
+- `src/components/SettingsPage.tsx`
 - `test/brand/brand-identity.test.ts`
 
 ## 验证
 
-- 聚焦品牌测试：4/4 通过。
-- `npm test`：57/57 通过。
+- 聚焦品牌测试：5/5 通过。
+- `npm test`：58/58 通过。
 - `npm run test:electron`：33/33 通过。
 - `npm run build`：Vite build 成功；仅有已有的混合导入与大 chunk 警告。
 - `git diff --check`：通过。

@@ -26,6 +26,12 @@ describe('Xunxintai brand identity', () => {
     expect(JSON.parse(read('metadata.json')).name).toBe('洵心台');
   });
 
+  it('shows the canonical product name in the Settings about card', () => {
+    const settings = read('src/components/SettingsPage.tsx');
+    expect(settings).toContain('>洵心台</div>');
+    expect(settings).not.toContain('>claude-desktop-cn</div>');
+  });
+
   it('uses the canonical Electron and MCP client identity', () => {
     const main = read('electron/main.cjs');
     expect(main).toContain("tray.setToolTip('洵心台')");
