@@ -45,3 +45,12 @@
 - 真实 zip 测试确认 central directory 路径先验、声明/实际大小异常、失败隔离清理；同时修复了解压流在建立输出管道前被 data listener 提前消费的问题。
 - 复审后验证：`npm run test:electron` 退出码 0，15/15；`npm test` 退出码 0，7 文件、53/53；`npm.cmd run build` 退出码 0，3706 modules；`git diff --check` 退出码 0。
 - 依赖调整：移除 `image-size`，新增运行时 `sharp`、`pngjs`、`png-chunks-extract`；`png-chunks-encode` 仅为开发测试依赖。`png-chunks-extract` 的依赖树含 deprecated `sliced@1.0.1` 提示，当前无已知替代安全缺口。
+
+## 第二轮安全复审修复
+
+- 三项新增测试先得到 RED（15/18）：namespace 前缀 SVG、像素预检顺序、并发 inspection token 各失败 1 项；最小修复后 18/18 GREEN。
+- SVG 保守拒绝任何 namespace-prefixed element，覆盖 `<x:script>` 与 `<x:foreignObject>`。
+- `sharp(..., { limitInputPixels: 32_000_000 }).metadata()` 在 `pngjs` CRC 与完整像素解码之前执行；超限由 header/metadata 阶段直接拒绝，测试用 decoder sentinel 证明未进入完整 PNG 解码。
+- `installImport` 在任何 `await` 前同步校验、读取并删除 inspection token，同时清除 TTL；并发 `Promise.allSettled` 验证同 token 仅一次安装成功，另一请求以 unknown inspection 拒绝。
+- inspect 的 extract/read/validate 纳入统一清理 try/catch；现有真实异常 zip 测试继续验证流式失败后隔离目录无残留。
+- 最终验证：Electron 18/18、Vitest 7 文件 53/53、build 退出码 0（3706 modules）、diff-check 与 3 个修改模块 node-check 均为退出码 0。

@@ -5,6 +5,7 @@ function decodeEntities(value) {
 function assertSafeSvg(buffer) {
   const source = decodeEntities(buffer.toString('utf8'));
   if (!/^\s*(?:<\?xml[^>]*>\s*)?<svg(?:\s|>)/i.test(source)) throw new Error('Unsafe SVG: invalid root');
+  if (/<\/?\s*[a-z_][\w.-]*:/i.test(source)) throw new Error('Unsafe SVG: namespace-prefixed element');
   if (/<!DOCTYPE|<!ENTITY|<\?(?!xml\s)|<\s*(?:script|foreignObject|style)\b/i.test(source)) throw new Error('Unsafe SVG: active element');
   if (/\son[a-z0-9_-]+\s*=/i.test(source)) throw new Error('Unsafe SVG: event attribute');
   if (/\sstyle\s*=|@import\b|url\s*\(|\s(?:src|poster)\s*=/i.test(source)) throw new Error('Unsafe SVG: external style or resource');

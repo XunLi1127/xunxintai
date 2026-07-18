@@ -77,6 +77,19 @@ test('SVG safety rejects stylesheets and every CSS external resource channel', (
   }
 });
 
+test('SVG safety rejects namespace-prefixed script and foreignObject elements', () => {
+  assert.throws(() => assertSafeSvg(Buffer.from('<svg xmlns:x="urn:x"><x:script/></svg>')), /unsafe svg/i);
+  assert.throws(() => assertSafeSvg(Buffer.from('<svg xmlns:x="urn:x"><x:foreignObject/></svg>')), /unsafe svg/i);
+});
+
+test('pixel limit is enforced from metadata before PNG CRC/full decode allocation', async () => {
+  const huge = await sharp({ create: { width: 8000, height: 5000, channels: 3, background: '#000' } }).png().toBuffer();
+  const { PNG } = require('pngjs'); const original = PNG.sync.read;
+  PNG.sync.read = () => { throw new Error('full decoder reached'); };
+  try { await assert.rejects(() => inspectMediaBuffer('huge.png', huge), /pixel/i); }
+  finally { PNG.sync.read = original; }
+});
+
 test('manifest markers cannot bypass per-file allowlist and media validation', async () => {
   await assert.rejects(() => detectThemeFormat([{ path: 'manifest.json', buffer: Buffer.from('{"format":"xunxintai-theme","name":"x"}') }, { path: 'run.exe', buffer: Buffer.from('MZ') }]), /file|extension/i);
   await assert.rejects(() => detectThemeFormat([{ path: 'theme.json', buffer: Buffer.from('{"name":"x","assets":{}}') }, { path: 'bad.png', buffer: Buffer.from('broken') }]), /image/i);
@@ -145,6 +158,17 @@ test('selection tokens are one-time and cannot become arbitrary paths', async (t
   await service.inspectImport(selected.selectionId);
   await assert.rejects(() => service.inspectImport(selected.selectionId), /unknown/i);
   await assert.rejects(() => service.inspectImport(image), /invalid|unknown/i);
+});
+
+test('inspection token is atomically consumed before concurrent installs await', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'theme-concurrent-test-')); t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const image = path.join(root, 'one.png'); await fs.writeFile(image, VALID_PNG);
+  const service = createThemeImportService({ dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [image] }) }, windowProvider: () => null, tempRoot: root, themesRoot: path.join(root, 'themes') });
+  const selected = await service.selectImport(); const inspected = await service.inspectImport(selected.selectionId);
+  const results = await Promise.allSettled([service.installImport(inspected.inspectionId), service.installImport(inspected.inspectionId)]);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  const rejected = results.find(result => result.status === 'rejected');
+  assert.match(rejected.reason.message, /unknown inspection/i);
 });
 
 test('zip is centrally checked before extraction and corrupt size cleans isolation directory', async (t) => {

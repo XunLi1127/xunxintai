@@ -55,11 +55,11 @@ function createThemeImportService({ dialog, windowProvider, tempRoot, themesRoot
       const selected = selectedEntry.filePath;
       let extracted = null;
       let files;
-      if (path.extname(selected).toLowerCase() === '.zip') {
-        extracted = await inspectAndExtractZip(selected, tempRoot);
-        files = await Promise.all(extracted.files.map(async file => ({ path: file.path, buffer: await fs.readFile(file.absolutePath) })));
-      } else files = [{ path: path.basename(selected), buffer: await fs.readFile(selected) }];
       try {
+        if (path.extname(selected).toLowerCase() === '.zip') {
+          extracted = await inspectAndExtractZip(selected, tempRoot);
+          files = await Promise.all(extracted.files.map(async file => ({ path: file.path, buffer: await fs.readFile(file.absolutePath) })));
+        } else files = [{ path: path.basename(selected), buffer: await fs.readFile(selected) }];
         const inspection = await validateThemeFiles(files);
         const inspectionId = crypto.randomUUID();
         await capInspections();
@@ -74,14 +74,14 @@ function createThemeImportService({ dialog, windowProvider, tempRoot, themesRoot
       }
     },
     async installImport(inspectionId) {
-      await purgeExpired();
       const id = token(inspectionId, 'inspection id');
       const pending = inspections.get(id);
+      inspections.delete(id);
+      if (pending?.expiryTimer) clearTimeout(pending.expiryTimer);
       if (!pending) throw new Error('Unknown inspection');
+      await purgeExpired();
       try { return await installTheme({ ...pending, themesRoot }); }
       finally {
-        inspections.delete(id);
-        if (pending.expiryTimer) clearTimeout(pending.expiryTimer);
         if (pending.extracted) await fs.rm(pending.extracted.destination, { recursive: true, force: true }).catch(() => {});
       }
     },

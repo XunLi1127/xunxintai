@@ -28,13 +28,17 @@ async function inspectMediaBuffer(fileName, buffer) {
   if (!expected || !expected.test(buffer)) throw new Error('Image extension does not match signature');
   let dimensions;
   try {
-    if (ext === 'png' || ext === 'apng') PNG.sync.read(buffer, { checkCRC: true });
-    const decoder = sharp(buffer, { animated: true, limitInputPixels: LIMITS.MAX_IMAGE_PIXELS });
-    dimensions = await decoder.metadata();
-    await decoder.raw().toBuffer();
-  } catch (error) { throw new Error(`Unable to decode image: ${error.message}`); }
+    dimensions = await sharp(buffer, { animated: true, limitInputPixels: LIMITS.MAX_IMAGE_PIXELS }).metadata();
+  } catch (error) {
+    if (/pixel|limit/i.test(error.message)) throw new Error('Image pixel limit exceeded');
+    throw new Error(`Unable to read image metadata: ${error.message}`);
+  }
   if (!dimensions.width || !dimensions.height) throw new Error('Unable to recognize image dimensions');
   if (dimensions.width * dimensions.height > LIMITS.MAX_IMAGE_PIXELS) throw new Error('Image pixel limit exceeded');
+  try {
+    if (ext === 'png' || ext === 'apng') PNG.sync.read(buffer, { checkCRC: true });
+    await sharp(buffer, { animated: true, limitInputPixels: LIMITS.MAX_IMAGE_PIXELS }).raw().toBuffer();
+  } catch (error) { throw new Error(`Unable to decode image: ${error.message}`); }
   const animated = ext === 'gif' || ext === 'webp' || ext === 'apng' || (ext === 'png' && buffer.includes(Buffer.from('acTL')));
   return { mediaType: expected.mediaType, width: dimensions.width, height: dimensions.height, animated };
 }
