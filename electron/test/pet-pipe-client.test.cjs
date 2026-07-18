@@ -47,8 +47,27 @@ test('坏 JSON、超长行和嵌套敏感字段使连接安全关闭', () => {
 test('状态消息严格递增并拒绝重复、乱序和旧 session', () => {
   const { client, connections } = setup(); client.start(); const c = connections[0];
   c.receive({ type: 'hello_ack', version: '1.0', token: 't'.repeat(32) });
-  c.receive({ type: 'state', sessionId: 'session-1', seq: 1, state: 'thinking' }); assert.equal(c.destroyed, false);
-  c.receive({ type: 'state', sessionId: 'session-1', seq: 1, state: 'idle' }); assert.equal(c.destroyed, true); client.stop();
+  c.receive({ type: 'heartbeat', sessionId: 'session-1', seq: 2 }); assert.equal(c.destroyed, false);
+  c.receive({ type: 'state', sessionId: 'session-1', seq: 2, state: 'idle' }); assert.equal(c.destroyed, true); client.stop();
+});
+
+test('握手后的首 heartbeat 使用 seq=2，并拒绝从已发 seq=1 跳到 seq=3', () => {
+  const ok = setup(); ok.client.start(); const okConnection = ok.connections[0];
+  okConnection.receive({ type: 'hello_ack', version: '1.0', token: 't'.repeat(32) });
+  okConnection.receive({ type: 'heartbeat', sessionId: 'session-1', seq: 2 });
+  assert.equal(okConnection.destroyed, false); ok.client.stop();
+
+  const skipped = setup(); skipped.client.start(); const skippedConnection = skipped.connections[0];
+  skippedConnection.receive({ type: 'hello_ack', version: '1.0', token: 't'.repeat(32) });
+  skippedConnection.receive({ type: 'heartbeat', sessionId: 'session-1', seq: 3 });
+  assert.equal(skippedConnection.destroyed, true); skipped.client.stop();
+});
+
+test('消费合法 NDJSON 行后按 UTF-8 字节拒绝同一 chunk 的超长未终止尾部', () => {
+  const { client, connections } = setup(); client.start(); const c = connections[0];
+  const ack = JSON.stringify({ type: 'hello_ack', version: '1.0', token: 't'.repeat(32) });
+  c.emit('data', Buffer.from(`${ack}\n${'界'.repeat(5462)}`, 'utf8'));
+  assert.equal(c.destroyed, true); client.stop();
 });
 
 test('心跳超时断线，退避 1s/3s/10s 且三次失败停止，stop 禁止重连', () => {

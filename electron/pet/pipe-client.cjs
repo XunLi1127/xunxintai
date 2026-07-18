@@ -13,7 +13,7 @@ class PetPipeClient extends EventEmitter {
   getStatus() { return { state: this.snapshot, connected: Boolean(this.authenticated), retryCount: this.retryCount, retryDelayMs: this.retryDelayMs || 0 }; }
   #open() {
     if (this.stopped) return;
-    this.sessionId = this.randomId(); this.seq = 0; this.lastIncomingSeq = 0; this.authenticated = false; this.buffer = '';
+    this.sessionId = this.randomId(); this.seq = 0; this.authenticated = false; this.buffer = '';
     const connection = this.connect(); this.connection = connection;
     connection.on('data', chunk => this.#data(connection, chunk));
     connection.once('close', () => this.#closed(connection));
@@ -33,6 +33,7 @@ class PetPipeClient extends EventEmitter {
     while ((index = this.buffer.indexOf('\n')) >= 0) {
       const line = this.buffer.slice(0, index); this.buffer = this.buffer.slice(index + 1);
       try { this.#message(connection, decodeLine(line)); } catch { connection.destroy(); return; }
+      if (Buffer.byteLength(this.buffer, 'utf8') > MAX_LINE_BYTES && !this.buffer.includes('\n')) { connection.destroy(); return; }
     }
   }
   #message(connection, message) {
@@ -40,8 +41,8 @@ class PetPipeClient extends EventEmitter {
       if (message.type !== 'hello_ack' || message.token !== this.token) throw new Error('authentication failed');
       this.authenticated = true; this.retryCount = 0; this.#armHeartbeat(connection); this.#send({ type: 'state', state: this.snapshot }); return;
     }
-    if (message.sessionId !== this.sessionId || message.seq <= this.lastIncomingSeq) throw new Error('invalid sequence');
-    this.lastIncomingSeq = message.seq; this.#armHeartbeat(connection); this.emit('message', message);
+    if (message.sessionId !== this.sessionId || message.seq !== this.seq + 1) throw new Error('invalid sequence');
+    this.seq = message.seq; this.#armHeartbeat(connection); this.emit('message', message);
   }
   #send(message) { this.connection.write(encodeMessage({ ...message, sessionId: this.sessionId, seq: ++this.seq })); }
   #closed(connection) {
