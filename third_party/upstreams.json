@@ -1,0 +1,22 @@
+{
+  "claudeDesktopCn": {
+    "repository": "https://github.com/Qiao-920/claude-desktop-cn",
+    "commit": "f248671c653c3690c67b9e36e14e31c65d6f20d6"
+  },
+  "clawdOnDesk": {
+    "repository": "https://github.com/rullerzhou-afk/clawd-on-desk",
+    "commit": "6722307467c5330f62bcf69443f23f3ab4911ee7",
+    "license": "AGPL-3.0-only",
+    "distribution": "independent-optional-component"
+  },
+  "catppuccinPalette": {
+    "repository": "https://github.com/catppuccin/palette",
+    "commit": "07d02aa110ef9eb7e7427afca5c73ba9cf7f8ebd",
+    "license": "MIT"
+  },
+  "tintedSchemes": {
+    "repository": "https://github.com/tinted-theming/schemes",
+    "commit": "010185535336bf94d815b900cd63bb0fc204e216",
+    "license": "MIT"
+  }
+}
