@@ -15,20 +15,20 @@
 
 /* === CSS Variables (Theme) === */
 :root {
-  --bg-claude-main: #F8F8F6;
-  --bg-claude-sidebar: #F7F7F4;
-  --border-claude: #E8E7E3;
-  --text-claude-main: #2a2a2a;
-  --text-claude-model-body: #2a2a2a;
-  --text-claude-secondary: #666666;
-  --bg-claude-accent: #CC7C5E;
-  --bg-claude-hover: #EFEEEB;
-  --bg-claude-btn-hover: #EAE9E6;
-  --bg-claude-input: #FFFFFF;
-  --bg-claude-avatar: #333333;
-  --text-claude-avatar: #FFFFFF;
-  --bg-mode-tabs: #EFEEEB;
-  --bg-mode-tab-active: #F8F8F6;
+  --bg-claude-main: var(--xun-canvas);
+  --bg-claude-sidebar: var(--xun-panel);
+  --border-claude: var(--xun-border);
+  --text-claude-main: var(--xun-text-primary);
+  --text-claude-model-body: var(--xun-text-primary);
+  --text-claude-secondary: var(--xun-text-secondary);
+  --bg-claude-accent: var(--xun-accent);
+  --bg-claude-hover: var(--xun-overlay);
+  --bg-claude-btn-hover: var(--xun-overlay);
+  --bg-claude-input: var(--xun-code-background);
+  --bg-claude-avatar: var(--xun-text-primary);
+  --text-claude-avatar: var(--xun-text-inverse);
+  --bg-mode-tabs: var(--xun-overlay);
+  --bg-mode-tab-active: var(--xun-canvas);
   --chat-body-font-size: 15.5px;
   --chat-user-font-size: 15px;
   --chat-input-font-size: 15px;
@@ -65,20 +65,6 @@
 }
 
 .dark {
-  --bg-claude-main: #1F1F1E;
-  --bg-claude-sidebar: #1E1E1C;
-  --border-claude: #444341;
-  --text-claude-main: #FFFFFF;
-  --text-claude-model-body: #EDEAE1;
-  --text-claude-secondary: #ABA499;
-  --bg-claude-accent: #CC7C5E;
-  --bg-claude-hover: #121212;
-  --bg-claude-btn-hover: #121212;
-  --bg-claude-input: #30302E;
-  --bg-claude-avatar: #D4D4D4;
-  --text-claude-avatar: #222222;
-  --bg-mode-tabs: #121212;
-  --bg-mode-tab-active: #1F1F1E;
   color-scheme: dark;
 }
 

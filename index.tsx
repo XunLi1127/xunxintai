@@ -2,21 +2,25 @@ import './src/index.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './src/App';
+import { createThemeController } from './src/theme/themeStorage';
 
 const rootElement = document.getElementById('root');
 
-// Initialize theme and font from localStorage to ensure CSS variables are hydrated before render
-const theme = localStorage.getItem('theme') || 'auto';
+// Hydrate theme variables before the first React render to avoid a color flash.
+export const themeController = createThemeController({
+  root: document.documentElement,
+  storage: localStorage,
+  media: window.matchMedia('(prefers-color-scheme: dark)'),
+});
+
 const font = localStorage.getItem('chat_font') || 'default';
 const density = localStorage.getItem('ui_density') || 'compact';
-if (theme === 'dark' || (theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-  document.documentElement.setAttribute('data-theme', 'dark');
-  document.documentElement.classList.add('dark');
-} else {
-  document.documentElement.setAttribute('data-theme', 'light');
-}
 document.documentElement.setAttribute('data-chat-font', font);
 document.documentElement.setAttribute('data-ui-density', density);
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => themeController.dispose());
+}
 
 if (!rootElement) {
   throw new Error("Could not find root element to mount to");
