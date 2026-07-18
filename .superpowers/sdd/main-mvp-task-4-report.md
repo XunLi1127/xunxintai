@@ -23,3 +23,11 @@
 ## 仍有边界
 
 当前测试版不捆绑 Git for Windows。部署验收对象仍需预装 Git for Windows；后续若要求真正零前置，需要单独完成 portable Git 的许可证与体积评估。
+
+## 供应链复审加固
+
+- `extraResources` 现在校验精确 `from`/`to`、关键文件的 filter 包含语义，并拒绝任何会覆盖 `engine/.env` 的广义映射。
+- 扫描所有实际映射的 env/JSON/TOML/YAML/INI/CONF 配置候选，覆盖 access key、credential、auth、database URL 和 PEM 等秘密，同时允许空值及公开布尔值。
+- 新 Bun 先在同目录临时文件执行精确版本校验，成功后才替换正式目标；失败保留已有 Bun 并清理临时文件。
+- 下载增加 HTTPS 重定向限制、Content-Length 与流字节上限、请求闲置超时；解压增加 bun.exe 字节上限；缓存原子写失败会清理临时文件。
+- 注入式测试覆盖坏缓存删除后下载、下载约束、缓存原子失败清理、版本验证前不替换，以及资源目的地/filter/广义 `.env`。
