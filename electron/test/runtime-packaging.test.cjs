@@ -96,12 +96,29 @@ test('broad engine mappings that would include .env are rejected', () => {
   assert.throws(() => check.checkPackageConfig(dir), /\.env/);
 });
 
+test('resolved broad and traversal-equivalent mappings cannot bypass .env guard', () => {
+  for (const mapping of [{ from: '.', to: '.' }, { from: 'engine/..', to: '.' }, { from: 'engine/src/..', to: 'engine' }]) {
+    const dir = tempProject(); const pkgPath = path.join(dir, 'package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath)); pkg.build.extraResources.push(mapping); fs.writeFileSync(pkgPath, JSON.stringify(pkg));
+    assert.throws(() => check.checkPackageConfig(dir), /\.env|越界|广义/);
+  }
+});
+
 test('secret scan covers credential and PEM-like values but permits public booleans and blanks', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xun-secrets-')); const file = path.join(dir, 'config.toml');
   fs.writeFileSync(file, 'DISABLE_TELEMETRY=1\nAUTH=\n'); assert.doesNotThrow(() => check.checkConfigFile(file));
   for (const line of ['ACCESS_KEY=abc', 'CREDENTIAL=abc', 'AUTH=Bearer-abc', 'DATABASE_URL=postgres://u:p@h/db', 'CERT="-----BEGIN PRIVATE KEY-----"']) {
     fs.writeFileSync(file, line); assert.throws(() => check.checkConfigFile(file), /秘密/);
   }
+});
+
+test('hyphenated secret keys are rejected before package-name noise suppression', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xun-hyphen-secret-')); const file = path.join(dir, 'config.yaml');
+  for (const line of ['api-key: abc', 'access-key: abc', 'private-key: abc']) {
+    fs.writeFileSync(file, line); assert.throws(() => check.checkConfigFile(file), /秘密/);
+  }
+  fs.writeFileSync(file, 'dependencies:\n  google-auth-library: 10.6.2\n');
+  assert.doesNotThrow(() => check.checkConfigFile(file));
 });
 
 test('runtime check scans every packaged engine config candidate', () => {
