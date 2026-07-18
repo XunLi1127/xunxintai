@@ -33,3 +33,15 @@
 - 构建保留仓库既有的 clipboard 动静态混合导入和大 chunk 警告。
 - `npm install` 报告依赖树中 28 个审计项（1 low、9 moderate、18 high）；本任务未做范围外 `npm audit fix`。
 - 提交：`feat: 增加安全主题素材导入管线`。
+
+## 安全复审修复
+
+- 追加 RED：复审测试最初 5/11 通过，6 项失败分别暴露完整解码、SVG 外部样式、manifest 短路、删除 ownership、selection 复用及异常 zip 契约；APNG 结构测试随后以 14/15 触发预期 RED。
+- xun/clawd 等格式在识别前统一执行根级 JSON allowlist 与逐媒体扩展名、魔数、完整解码、像素和 SVG 校验；安装后从 staging 重读实际文件并 await 同一验证链。
+- 使用 `sharp` 完整解码栅格图片，`pngjs` 校验 PNG/APNG CRC，`png-chunks-extract` 验证 APNG 必须具有真实 `acTL`/`fcTL` 块；测试夹具均为真实有效 PNG/APNG。
+- SVG 进一步拒绝 style 元素/属性、CSS `url()`、`@import`、非 XML 声明 PI、DOCTYPE/ENTITY 及额外外部资源属性。
+- manifest 写入 pipeline ownership 标记；删除前用 `lstat` 拒绝目录/manifest 链接，并验证 manifest 为常规文件、id 匹配且 ownership 有效。
+- selection token 在检查开始时一次性消费；inspection 默认 10 分钟自动到期、最多 4 项，过期/淘汰/安装均释放内存并清理临时目录。
+- 真实 zip 测试确认 central directory 路径先验、声明/实际大小异常、失败隔离清理；同时修复了解压流在建立输出管道前被 data listener 提前消费的问题。
+- 复审后验证：`npm run test:electron` 退出码 0，15/15；`npm test` 退出码 0，7 文件、53/53；`npm.cmd run build` 退出码 0，3706 modules；`git diff --check` 退出码 0。
+- 依赖调整：移除 `image-size`，新增运行时 `sharp`、`pngjs`、`png-chunks-extract`；`png-chunks-encode` 仅为开发测试依赖。`png-chunks-extract` 的依赖树含 deprecated `sliced@1.0.1` 提示，当前无已知替代安全缺口。

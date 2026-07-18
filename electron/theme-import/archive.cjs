@@ -23,8 +23,11 @@ function validateArchiveEntries(entries) {
   const files = entries.filter(entry => !String(entry.fileName).endsWith('/'));
   if (files.length > LIMITS.MAX_FILE_COUNT) throw new Error('Archive file count limit exceeded');
   let total = 0;
+  const paths = new Set();
   for (const entry of entries) {
-    safeRelativePath(entry.fileName);
+    const relative = safeRelativePath(entry.fileName);
+    if (paths.has(relative)) throw new Error('Duplicate archive path');
+    paths.add(relative);
     if (isUnsafeType(entry)) throw new Error('Archive link or special entries are forbidden');
     if (entry.uncompressedSize > LIMITS.MAX_SINGLE_FILE_BYTES) throw new Error('Archive single file limit exceeded');
     if (!Number.isSafeInteger(entry.uncompressedSize) || entry.uncompressedSize < 0) throw new Error('Invalid declared size');
@@ -57,6 +60,7 @@ async function inspectAndExtractZip(zipPath, tempRoot) {
         if (entry.fileName.endsWith('/')) { reader.readEntry(); return; }
         reader.openReadStream(entry, async (err, stream) => {
           if (err) return reject(err);
+          stream.pause();
           const relative = safeRelativePath(entry.fileName);
           const target = path.join(destination, ...relative.split('/'));
           let actual = 0;
@@ -65,7 +69,7 @@ async function inspectAndExtractZip(zipPath, tempRoot) {
           try { await fsp.mkdir(path.dirname(target), { recursive: true }); } catch (error) { reject(error); return; }
           const output = fs.createWriteStream(target, { flags: 'wx', mode: 0o600 });
           output.once('error', reject);
-          output.once('finish', () => {
+          output.once('close', () => {
             if (actual !== entry.uncompressedSize) return reject(new Error('Extracted size mismatch'));
             extracted.push({ path: relative, absolutePath: target, bytes: actual }); reader.readEntry();
           });

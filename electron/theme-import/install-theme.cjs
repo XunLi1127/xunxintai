@@ -22,11 +22,11 @@ async function installTheme({ inspection, files, themesRoot, themeIdFactory }) {
       await fs.mkdir(path.dirname(target), { recursive: true });
       await fs.writeFile(target, file.buffer, { flag: 'wx', mode: 0o600 });
     }
-    const manifest = { id: themeId, name: inspection.displayName, format: 'xunxintai-theme', sourceFormat: inspection.format, files: inspection.files, installedAt: new Date().toISOString() };
+    const manifest = { id: themeId, ownership: 'xunxintai-theme-import-v1', name: inspection.displayName, format: 'xunxintai-theme', sourceFormat: inspection.format, files: inspection.files, installedAt: new Date().toISOString() };
     await fs.writeFile(path.join(staging, 'manifest.json'), JSON.stringify(manifest, null, 2), { flag: 'wx' });
     const rereadPaths = [...files.filter(item => item.path.toLowerCase() !== 'manifest.json').map(item => item.path), 'manifest.json'];
     const reread = await Promise.all(rereadPaths.map(async filePath => ({ path: filePath, buffer: await fs.readFile(path.join(staging, ...safeRelativePath(filePath).split('/'))) })));
-    validateThemeFiles(reread);
+    await validateThemeFiles(reread);
     await fs.rename(staging, destination);
     return { id: themeId, manifest };
   } catch (error) {
@@ -50,6 +50,14 @@ async function removeInstalled(themesRoot, themeId) {
   const root = path.resolve(themesRoot);
   const target = path.resolve(root, themeId);
   if (path.dirname(target) !== root) throw new Error('Theme path escapes root');
+  const targetStat = await fs.lstat(target);
+  if (!targetStat.isDirectory() || targetStat.isSymbolicLink()) throw new Error('Theme target must be a regular directory, not a link');
+  const manifestPath = path.join(target, 'manifest.json');
+  const manifestStat = await fs.lstat(manifestPath);
+  if (!manifestStat.isFile() || manifestStat.isSymbolicLink()) throw new Error('Theme manifest must be a regular file');
+  let manifest;
+  try { manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8')); } catch (_) { throw new Error('Invalid theme manifest'); }
+  if (manifest.id !== themeId || manifest.ownership !== 'xunxintai-theme-import-v1') throw new Error('Theme is not owned by the import pipeline or manifest id mismatches');
   await fs.rm(target, { recursive: true, force: false });
   return true;
 }
