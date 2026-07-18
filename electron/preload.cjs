@@ -41,3 +41,11 @@ contextBridge.exposeInMainWorld('themeApi', Object.freeze({
     listInstalled: () => ipcRenderer.invoke('theme:list-installed'),
     removeInstalled: (themeId) => ipcRenderer.invoke('theme:remove-installed', themeId),
 }));
+
+contextBridge.exposeInMainWorld('petApi', Object.freeze({
+    getStatus: () => ipcRenderer.invoke('pet:get-status'),
+    start: () => ipcRenderer.invoke('pet:start'),
+    stop: () => ipcRenderer.invoke('pet:stop'),
+    updateSettings: (settings) => ipcRenderer.invoke('pet:update-settings', settings),
+    exportDiagnostics: () => ipcRenderer.invoke('pet:export-diagnostics'),
+}));

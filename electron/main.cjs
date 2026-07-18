@@ -4,6 +4,7 @@ const fs = require('fs');
 const archiver = require('archiver');
 const { autoUpdater } = require('electron-updater');
 const { createThemeImportService } = require('./theme-import/service.cjs');
+const { PetManager } = require('./pet/pet-manager.cjs');
 // Load build-time secrets before requiring bridge-server so they're available on process.env.
 // secrets.json is gitignored 鈥?populated by CI at build time from GitHub Actions secrets.
 // In dev just export the env vars in your shell (or put them in this file locally).
@@ -33,6 +34,7 @@ let mainWindow;
 let tray = null;
 let isQuitting = false;
 let hasShownTrayHint = false;
+const petManager = new PetManager();
 
 const isDev = process.env.NODE_ENV === 'development';
 const isWindows = process.platform === 'win32';
@@ -532,6 +534,7 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
     isQuitting = true;
+    petManager.stop();
 });
 
 app.on('window-all-closed', () => {
@@ -543,6 +546,11 @@ app.on('window-all-closed', () => {
 // IPC Handlers for future bridge communication
 ipcMain.handle('get-app-path', () => app.getPath('userData'));
 ipcMain.handle('get-platform', () => process.platform);
+ipcMain.handle('pet:get-status', () => petManager.getStatus());
+ipcMain.handle('pet:start', () => petManager.start());
+ipcMain.handle('pet:stop', () => petManager.stop());
+ipcMain.handle('pet:update-settings', (_, settings) => petManager.updateSettings(settings));
+ipcMain.handle('pet:export-diagnostics', () => petManager.exportDiagnostics());
 ipcMain.handle('install-update', () => {
     // On Mac, autoUpdater.quitAndInstall() doesn't reliably relaunch the app.
     // Use app.relaunch() + app.exit() to ensure the app restarts on all platforms.
