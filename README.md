@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/brand/xunxintai-mark.svg" width="112" alt="洵心台图标"></p>
+
 # 洵心台
 
 <p align="center">

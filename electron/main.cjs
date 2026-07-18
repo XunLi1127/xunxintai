@@ -131,14 +131,14 @@ function getRuntimeIconPath(fileName) {
 
 function getWindowIconPath() {
     return firstExistingPath([
-        process.platform === 'win32' ? getRuntimeIconPath('favicon.ico') : null,
-        getRuntimeIconPath('favicon.png'),
+        process.platform === 'win32' ? getRuntimeIconPath('xunxintai.ico') : null,
+        getRuntimeIconPath('xunxintai-256.png'),
     ]);
 }
 
 function getTrayIcon() {
-    const trayIcoPath = getRuntimeIconPath('favicon.ico');
-    const trayPngPath = getRuntimeIconPath('favicon.png');
+    const trayIcoPath = getRuntimeIconPath('xunxintai.ico');
+    const trayPngPath = getRuntimeIconPath('xunxintai-256.png');
 
     if (trayPngPath && fs.existsSync(trayPngPath)) {
         const baseIcon = nativeImage.createFromPath(trayPngPath);

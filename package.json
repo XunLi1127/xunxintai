@@ -20,6 +20,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:electron": "node --test electron/test/*.test.cjs",
+    "brand:icons": "node scripts/generate-brand-icons.cjs",
     "check": "npm test && npm run test:electron && npm run build",
     "electron:dev": "vite build && electron .",
     "electron:build": "vite build && electron-builder",
@@ -96,12 +97,12 @@
         "to": "engine/.env.defaults"
       },
       {
-        "from": "public/favicon.ico",
-        "to": "assets/favicon.ico"
+        "from": "public/xunxintai.ico",
+        "to": "assets/xunxintai.ico"
       },
       {
-        "from": "public/favicon.png",
-        "to": "assets/favicon.png"
+        "from": "public/xunxintai-256.png",
+        "to": "assets/xunxintai-256.png"
       }
     ],
     "publish": {
@@ -114,14 +115,14 @@
       "target": [
         "nsis"
       ],
-      "icon": "public/favicon.ico"
+      "icon": "public/xunxintai.ico"
     },
     "mac": {
       "target": [
         "dmg",
         "zip"
       ],
-      "icon": "public/icon-mac.png",
+      "icon": "public/xunxintai-1024.png",
       "category": "public.app-category.productivity"
     },
     "linux": {
@@ -129,7 +130,7 @@
         "AppImage",
         "deb"
       ],
-      "icon": "public/favicon.png",
+      "icon": "public/xunxintai-512.png",
       "category": "Utility"
     },
     "nsis": {
