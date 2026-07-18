@@ -712,7 +712,7 @@ ipcMain.handle('export-workspace', async (event, workspaceId, contextMarkdown, d
         const zipDest = result.filePath;
         const workspacePath = path.join(app.getPath('userData'), 'workspaces', workspaceId);
 
-        // 纭繚瀵瑰簲鐨?workspace 鐩綍瀛樺湪 (鍗充娇涔嬪墠鍥犱负娌℃湁鍙戠敓杩囩浉鍏虫枃浠舵搷浣滆€屾病鍒涘缓)
+        // 确保对应的 workspace 目录存在（即使此前没有发生过相关文件操作）。
         if (!fs.existsSync(workspacePath)) {
             fs.mkdirSync(workspacePath, { recursive: true });
         }
@@ -737,7 +737,7 @@ ipcMain.handle('export-workspace', async (event, workspaceId, contextMarkdown, d
 
             archive.pipe(output);
 
-            // 灏嗘暣涓枃浠跺す閲岀殑鎵€鏈夋枃浠跺钩鎽婂鍏ヨ繖涓帇缂╁寘閲?(涓嶇敤澶氬涓€灞傛枃浠跺す澹?
+            // 将文件夹中的所有文件直接放入压缩包，不额外嵌套目录。
             archive.directory(workspacePath, false);
 
             archive.finalize();

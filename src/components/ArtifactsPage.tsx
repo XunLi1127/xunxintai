@@ -324,7 +324,7 @@ const ArtifactsPage: React.FC<ArtifactsPageProps> = ({ onTryPrompt }) => {
                   <button
                     onClick={() => handleCopyPrompt(selectedItem.starting_prompt)}
                     className="p-1.5 rounded-md text-claude-textSecondary hover:bg-claude-hover hover:text-claude-text transition-colors"
-                    title={copied ? 'Copied!' : 'Copy prompt'}
+                    title={copied ? (isZh ? '已复制' : 'Copied!') : (isZh ? '复制提示词' : 'Copy prompt')}
                   >
                     {copied ? <Check size={15} /> : <Copy size={15} />}
                   </button>
@@ -343,7 +343,7 @@ const ArtifactsPage: React.FC<ArtifactsPageProps> = ({ onTryPrompt }) => {
                   onClick={() => handleTryIt(selectedItem.starting_prompt)}
                   className="flex items-center justify-between w-full px-4 py-2.5 border border-claude-border rounded-xl text-[13px] font-medium text-claude-text hover:bg-claude-hover transition-colors"
                 >
-                  <span>{isZh ? '鏌ョ湅瀹屾暣鑱婂ぉ' : 'View full chat'}</span>
+                  <span>{isZh ? '查看完整聊天' : 'View full chat'}</span>
                   <ExternalLink size={13} className="text-claude-textSecondary" />
                 </button>
                 <a
@@ -352,7 +352,7 @@ const ArtifactsPage: React.FC<ArtifactsPageProps> = ({ onTryPrompt }) => {
                   rel="noopener noreferrer"
                   className="flex items-center justify-between w-full px-4 py-2.5 border border-claude-border rounded-xl text-[13px] font-medium text-claude-text hover:bg-claude-hover transition-colors"
                 >
-                  <span>{isZh ? 'Artifacts 鎸囧崡' : 'Artifacts guide'}</span>
+                  <span>{isZh ? 'Artifacts 指南' : 'Artifacts guide'}</span>
                   <ExternalLink size={13} className="text-claude-textSecondary" />
                 </a>
               </div>

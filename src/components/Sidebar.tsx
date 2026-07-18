@@ -911,7 +911,7 @@ const Sidebar = ({ isCollapsed, toggleSidebar, refreshTrigger, onNewChatClick, o
               paddingRight: '12px'
             }}
           >
-            <span className="text-[13px] font-medium text-claude-textSecondary">Recents</span>
+            <span className="text-[13px] font-medium text-claude-textSecondary">{isZh ? '最近使用' : 'Recents'}</span>
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -919,7 +919,7 @@ const Sidebar = ({ isCollapsed, toggleSidebar, refreshTrigger, onNewChatClick, o
               }}
               className="text-[13px] font-medium text-claude-textSecondary opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity cursor-pointer outline-none"
             >
-              {isRecentsCollapsed ? 'Show' : 'Hide'}
+              {isRecentsCollapsed ? (isZh ? '显示' : 'Show') : (isZh ? '隐藏' : 'Hide')}
             </button>
           </div>
 
@@ -1059,7 +1059,7 @@ const Sidebar = ({ isCollapsed, toggleSidebar, refreshTrigger, onNewChatClick, o
                 </svg>
                 <div className="flex-1 min-w-0">
                   <div className="text-[12px] text-claude-textSecondary leading-tight">
-                    Downloading update...{updateStatus.percent != null ? ` ${updateStatus.percent}%` : ''}
+                    {isZh ? `正在下载更新${updateStatus.percent != null ? ` ${updateStatus.percent}%` : ''}` : `Downloading update...${updateStatus.percent != null ? ` ${updateStatus.percent}%` : ''}`}
                   </div>
                   {updateStatus.percent != null && (
                     <div className="mt-1.5 h-[3px] rounded-full bg-claude-border overflow-hidden">
@@ -1077,14 +1077,14 @@ const Sidebar = ({ isCollapsed, toggleSidebar, refreshTrigger, onNewChatClick, o
                     <polyline points="7 10 12 15 17 10" />
                     <line x1="12" y1="15" x2="12" y2="3" />
                   </svg>
-                  <div className="text-[13px] text-claude-text font-medium leading-tight">Updated to {updateStatus.version}</div>
+                  <div className="text-[13px] text-claude-text font-medium leading-tight">{isZh ? `已更新至 ${updateStatus.version}` : `Updated to ${updateStatus.version}`}</div>
                 </div>
-                <div className="text-[11.5px] text-claude-textSecondary mb-2.5 ml-6">Relaunch to apply</div>
+                <div className="text-[11.5px] text-claude-textSecondary mb-2.5 ml-6">{isZh ? '重启后应用更新' : 'Relaunch to apply'}</div>
                 <button
                   onClick={() => { const api = (window as any).electronAPI; api?.installUpdate?.(); }}
                   className="w-full px-3 py-1.5 rounded-md bg-claude-bg border border-claude-border text-[13px] text-claude-text font-medium hover:bg-claude-btnHover transition-colors"
                 >
-                  Relaunch
+                  {isZh ? '重启' : 'Relaunch'}
                 </button>
               </div>
             )}
