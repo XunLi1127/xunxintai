@@ -20,6 +20,8 @@ import ToolDiffView, { shouldUseDiffView, hasExpandableContent, getToolStats } f
 import { executeCode, sendCodeResult, setStatusCallback } from '../pyodideRunner';
 import { UiLanguage, getStoredUiLanguage, useClientLanguageText } from '../utils/chineseClientText';
 import { CHAT_STYLES_EVENT, ChatStyle, clearConversationChatStyleId, getAllChatStyles, getChatStyleDescription, getChatStyleLabel, getDefaultChatStyleId, getEffectiveChatStyle, setConversationChatStyleId } from '../utils/chatStyles';
+import ReasoningPanel from './ReasoningPanel';
+import { mergeReasoningSource, type ReasoningSource } from '../reasoning/types';
 
 function formatChatError(err: string): string {
   const lower = (err || '').toLowerCase();
@@ -622,6 +624,8 @@ function applyGenerationState(message: any, state: any) {
     content: state.text || message.content,
     thinking: state.thinking || message.thinking,
     thinkingSummary: state.thinkingSummary || message.thinkingSummary,
+    thinkingSource: mergeReasoningSource(message.thinkingSource, state.thinkingSource),
+    thinkingInterrupted: state.thinkingInterrupted ?? message.thinkingInterrupted,
     citations: state.citations?.length ? state.citations : message.citations,
     searchLogs: state.searchLogs?.length ? state.searchLogs : message.searchLogs,
     isThinking: !state.text && !!state.thinking,
@@ -887,77 +891,20 @@ const MessageList = React.memo<MessageListProps>(({
             )
           ) : (
             <div className="px-1 text-claude-text mt-2" style={{ fontSize: 'var(--chat-body-font-size)', lineHeight: 'var(--chat-message-line-height)' }}>
-              {msg.thinking && (
-                <div className="mb-4">
-                  <div
-                    className="flex items-center gap-2 cursor-pointer select-none group/think text-claude-textSecondary hover:text-claude-text transition-colors"
-                    onClick={() => {
-                      onSetMessages(prev =>
-                        prev.map((m, i) =>
-                          i === idx ? { ...m, isThinkingExpanded: !m.isThinkingExpanded } : m
-                        )
-                      );
-                    }}
-                  >
-                    {msg.isThinking && (
-                      <ClaudeLogo autoAnimate style={{ width: '30px', height: '30px' }} />
-                    )}
-                    <span className={`text-[14px] ${msg.isThinking ? 'animate-shimmer-text' : 'text-claude-textSecondary'}`}>
-                      {(() => {
-                        if (msg.thinking_summary) return msg.thinking_summary;
-                        const text = (msg.thinking || '').trim();
-                        const lines = text.split('\n').filter((l: string) => l.trim());
-                        const last = lines[lines.length - 1] || '';
-                        const summary = last.length > 40 ? last.slice(0, 40) + '...' : last;
-                        return summary || (uiLanguage === 'zh-CN' ? '思考中…' : 'Thinking...');
-                      })()}
-                    </span>
-                    <ChevronDown size={14} className={`transform transition-transform duration-200 ${msg.isThinkingExpanded ? 'rotate-180' : ''}`} />
-                  </div>
-
-                  {msg.isThinkingExpanded && (
-                    <div className="mt-2 ml-1 pl-4 border-l-2 border-claude-border">
-                      <div className="flex flex-col">
-                        <div className="relative">
-                          <div
-                            className="text-claude-textSecondary text-[14px] leading-normal whitespace-pre-wrap overflow-hidden"
-                            style={{ maxHeight: expandedMessages.has(idx) ? 'none' : '300px' }}
-                            ref={(el) => { if (el) messageContentRefs.current.set(idx, el); }}
-                          >
-                            {msg.thinking}
-                          </div>
-                          {!expandedMessages.has(idx) && (() => {
-                            const el = messageContentRefs.current.get(idx);
-                            return el && el.scrollHeight > 300;
-                          })() && (
-                              <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-claude-bg to-transparent pointer-events-none" />
-                            )}
-                        </div>
-                        {(() => {
-                          const el = messageContentRefs.current.get(idx);
-                          const isOverflow = el && el.scrollHeight > 300;
-                          if (!isOverflow) return null;
-                          return (
-                            <div className="pt-1">
-                              <button onClick={() => onToggleExpand(idx)} className="text-[13px] text-claude-text hover:text-claude-textSecondary transition-colors font-medium">
-                                {expandedMessages.has(idx)
-                                  ? (uiLanguage === 'zh-CN' ? '收起' : 'Show less')
-                                  : (uiLanguage === 'zh-CN' ? '展开更多' : 'Show more')}
-                              </button>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                      {!msg.isThinking && (
-                        <div className="flex items-center gap-2 mt-2 text-claude-textSecondary">
-                          <Check size={16} />
-                          <span className="text-[14px]">{uiLanguage === 'zh-CN' ? '完成' : 'Done'}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+              <ReasoningPanel
+                reasoning={msg.thinking}
+                summary={msg.thinkingSummary || msg.thinking_summary}
+                source={msg.thinkingSource}
+                interrupted={msg.thinkingInterrupted}
+                isThinking={msg.isThinking}
+                expanded={!!msg.isThinkingExpanded}
+                onExpandedChange={() => {
+                  onSetMessages(prev => prev.map((m, i) => (
+                    i === idx ? { ...m, isThinkingExpanded: !m.isThinkingExpanded } : m
+                  )));
+                }}
+                language={uiLanguage}
+              />
               {/* Research badge */}
               {msg.research && (
                 <button
@@ -2087,12 +2034,26 @@ const MainContent = ({ onNewChat, resetKey, tunerConfig, onOpenDocument, onArtif
                 messagesBufferRef.current.delete(convId);
                 if (viewingIdRef.current === convId) setLoading(false);
                 abortControllerRef.current = null;
-              },
-              (thinkingDelta, thinkingFull) => {
                 setMessagesFor(convId, prev => {
                   const newMsgs = [...prev];
                   const lastMsg = newMsgs[newMsgs.length - 1];
-                  if (lastMsg && lastMsg.role === 'assistant') { lastMsg.thinking = thinkingFull; lastMsg.isThinking = true; }
+                  if (lastMsg?.role === 'assistant' && lastMsg.thinking) {
+                    lastMsg.isThinking = false;
+                    lastMsg.thinkingInterrupted = true;
+                  }
+                  return newMsgs;
+                });
+              },
+              (thinkingDelta, thinkingFull, source: ReasoningSource = 'provider') => {
+                setMessagesFor(convId, prev => {
+                  const newMsgs = [...prev];
+                  const lastMsg = newMsgs[newMsgs.length - 1];
+                  if (lastMsg && lastMsg.role === 'assistant') {
+                    lastMsg.thinking = thinkingFull;
+                    lastMsg.thinkingSource = mergeReasoningSource(lastMsg.thinkingSource, source);
+                    lastMsg.thinkingInterrupted = false;
+                    lastMsg.isThinking = true;
+                  }
                   return newMsgs;
                 });
               },
@@ -2115,6 +2076,18 @@ const MainContent = ({ onNewChat, resetKey, tunerConfig, onOpenDocument, onArtif
                     const lastMsg = newMsgs[newMsgs.length - 1];
                     if (lastMsg && lastMsg.role === 'assistant') {
                       lastMsg.responseStats = data.stats;
+                    }
+                    return newMsgs;
+                  });
+                }
+                if (event === 'thinking_summary' && message) {
+                  setMessagesFor(convId, prev => {
+                    const newMsgs = [...prev];
+                    const lastMsg = newMsgs[newMsgs.length - 1];
+                    if (lastMsg?.role === 'assistant') {
+                      lastMsg.thinking_summary = message;
+                      lastMsg.thinkingSummary = message;
+                      lastMsg.thinkingSource = 'provider';
                     }
                     return newMsgs;
                   });
@@ -2220,6 +2193,15 @@ const MainContent = ({ onNewChat, resetKey, tunerConfig, onOpenDocument, onArtif
     }
 
     removeStreaming(trackedConversationId);
+    setMessagesFor(trackedConversationId, prev => {
+      const newMsgs = [...prev];
+      const lastMsg = newMsgs[newMsgs.length - 1];
+      if (lastMsg?.role === 'assistant' && lastMsg.thinking) {
+        lastMsg.isThinking = false;
+        lastMsg.thinkingInterrupted = true;
+      }
+      return newMsgs;
+    });
     setLoading(false);
     isCreatingRef.current = false;
     return true;
@@ -2810,17 +2792,20 @@ const MainContent = ({ onNewChat, resetKey, tunerConfig, onOpenDocument, onArtif
           if (newMsgs[newMsgs.length - 1] && newMsgs[newMsgs.length - 1].role === 'assistant') {
             newMsgs[newMsgs.length - 1].content = formatChatError(err);
             newMsgs[newMsgs.length - 1].isThinking = false;
+            if (newMsgs[newMsgs.length - 1].thinking) newMsgs[newMsgs.length - 1].thinkingInterrupted = true;
           }
           return newMsgs;
         });
       },
-      (thinkingDelta, thinkingFull) => {
+      (thinkingDelta, thinkingFull, source: ReasoningSource = 'provider') => {
         if (!isStreamSessionActive(conversationId!, streamRequestId)) return;
         setMessagesFor(conversationId!, prev => {
           const newMsgs = [...prev];
           const lastMsg = newMsgs[newMsgs.length - 1];
           if (lastMsg && lastMsg.role === 'assistant') {
             lastMsg.thinking = thinkingFull;
+            lastMsg.thinkingSource = mergeReasoningSource(lastMsg.thinkingSource, source);
+            lastMsg.thinkingInterrupted = false;
             lastMsg.isThinking = true;
             delete lastMsg.searchStatus;
           }
@@ -2860,6 +2845,8 @@ const MainContent = ({ onNewChat, resetKey, tunerConfig, onOpenDocument, onArtif
             const lastMsg = newMsgs[newMsgs.length - 1];
             if (lastMsg && lastMsg.role === 'assistant') {
               lastMsg.thinking_summary = message;
+              lastMsg.thinkingSummary = message;
+              lastMsg.thinkingSource = 'provider';
             }
             return newMsgs;
           });
@@ -3188,6 +3175,17 @@ const MainContent = ({ onNewChat, resetKey, tunerConfig, onOpenDocument, onArtif
       stopGeneration(activeId).catch(e => console.error('[Stop] error:', e));
       stopPolling();
     }
+    if (activeId) {
+      setMessagesFor(activeId, prev => {
+        const newMsgs = [...prev];
+        const lastMsg = newMsgs[newMsgs.length - 1];
+        if (lastMsg?.role === 'assistant' && lastMsg.thinking) {
+          lastMsg.isThinking = false;
+          lastMsg.thinkingInterrupted = true;
+        }
+        return newMsgs;
+      });
+    }
     if (activeId) removeStreaming(activeId);
     setLoading(false);
     isCreatingRef.current = false;
@@ -3321,17 +3319,20 @@ const MainContent = ({ onNewChat, resetKey, tunerConfig, onOpenDocument, onArtif
           if (newMsgs[newMsgs.length - 1] && newMsgs[newMsgs.length - 1].role === 'assistant') {
             newMsgs[newMsgs.length - 1].content = formatChatError(err);
             newMsgs[newMsgs.length - 1].isThinking = false;
+            if (newMsgs[newMsgs.length - 1].thinking) newMsgs[newMsgs.length - 1].thinkingInterrupted = true;
           }
           return newMsgs;
         });
       },
-      (thinkingDelta, thinkingFull) => {
+      (thinkingDelta, thinkingFull, source: ReasoningSource = 'provider') => {
         if (!isStreamSessionActive(conversationId, streamRequestId)) return;
         setMessagesFor(conversationId, prev => {
           const newMsgs = [...prev];
           const lastMsg = newMsgs[newMsgs.length - 1];
           if (lastMsg && lastMsg.role === 'assistant') {
             lastMsg.thinking = thinkingFull;
+            lastMsg.thinkingSource = mergeReasoningSource(lastMsg.thinkingSource, source);
+            lastMsg.thinkingInterrupted = false;
             lastMsg.isThinking = true;
             delete lastMsg.searchStatus;
           }
@@ -3356,6 +3357,8 @@ const MainContent = ({ onNewChat, resetKey, tunerConfig, onOpenDocument, onArtif
             const lastMsg = newMsgs[newMsgs.length - 1];
             if (lastMsg && lastMsg.role === 'assistant') {
               lastMsg.thinking_summary = message;
+              lastMsg.thinkingSummary = message;
+              lastMsg.thinkingSource = 'provider';
             }
             return newMsgs;
           });
@@ -3537,17 +3540,20 @@ const MainContent = ({ onNewChat, resetKey, tunerConfig, onOpenDocument, onArtif
           if (newMsgs[newMsgs.length - 1] && newMsgs[newMsgs.length - 1].role === 'assistant') {
             newMsgs[newMsgs.length - 1].content = formatChatError(err);
             newMsgs[newMsgs.length - 1].isThinking = false;
+            if (newMsgs[newMsgs.length - 1].thinking) newMsgs[newMsgs.length - 1].thinkingInterrupted = true;
           }
           return newMsgs;
         });
       },
-      (thinkingDelta, thinkingFull) => {
+      (thinkingDelta, thinkingFull, source: ReasoningSource = 'provider') => {
         if (!isStreamSessionActive(conversationId, streamRequestId)) return;
         setMessagesFor(conversationId, prev => {
           const newMsgs = [...prev];
           const lastMsg = newMsgs[newMsgs.length - 1];
           if (lastMsg && lastMsg.role === 'assistant') {
             lastMsg.thinking = thinkingFull;
+            lastMsg.thinkingSource = mergeReasoningSource(lastMsg.thinkingSource, source);
+            lastMsg.thinkingInterrupted = false;
             lastMsg.isThinking = true;
             delete lastMsg.searchStatus;
           }
@@ -3572,6 +3578,8 @@ const MainContent = ({ onNewChat, resetKey, tunerConfig, onOpenDocument, onArtif
             const lastMsg = newMsgs[newMsgs.length - 1];
             if (lastMsg && lastMsg.role === 'assistant') {
               lastMsg.thinking_summary = message;
+              lastMsg.thinkingSummary = message;
+              lastMsg.thinkingSource = 'provider';
             }
             return newMsgs;
           });

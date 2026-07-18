@@ -1,5 +1,9 @@
 import { getEffectiveChatStyle } from './utils/chatStyles';
 
+import { extractCompatibilityThinking } from './reasoning/compatibilityThinking';
+import { normalizeReasoningEvent } from './reasoning/normalizeReasoningEvent';
+import { mergeReasoningSource, type ReasoningSource } from './reasoning/types';
+
 const API_BASE = 'http://127.0.0.1:30080/api';
 const GATEWAY_BASE = 'https://api-cn.jiazhuang.cloud';
 const CHENGDU_API = 'https://clawparrot.com/api';
@@ -1370,7 +1374,7 @@ export function reconnectStream(
   onDelta: (delta: string, full: string) => void,
   onDone: (full: string) => void,
   onError: (err: string) => void,
-  onThinking?: (thinking: string, full: string) => void,
+  onThinking?: (thinking: string, full: string, source?: ReasoningSource) => void,
   onSystem?: (event: string, message: string, data: any) => void,
   onToolUse?: (event: { type: 'start' | 'done'; tool_use_id: string; tool_name?: string; tool_input?: any; content?: string; is_error?: boolean }) => void,
   signal?: AbortSignal
@@ -1402,13 +1406,24 @@ export function reconnectStream(
 
             if (parsed.type === 'content_block_delta' && parsed.delta) {
               if (parsed.delta.type === 'text_delta' && parsed.delta.text) {
-                fullText += parsed.delta.text;
-                onDelta(parsed.delta.text, fullText);
+                const compatibility = extractCompatibilityThinking(parsed.delta.text);
+                for (const reasoning of compatibility.reasoning) {
+                  thinkingText += reasoning;
+                  onThinking?.(reasoning, thinkingText, 'compatibility');
+                }
+                if (compatibility.visibleText) {
+                  fullText += compatibility.visibleText;
+                  onDelta(compatibility.visibleText, fullText);
+                }
               }
-              if (parsed.delta.type === 'thinking_delta' && parsed.delta.thinking && onThinking) {
-                thinkingText += parsed.delta.thinking;
-                onThinking(parsed.delta.thinking, thinkingText);
-              }
+            }
+            const reasoningEvent = normalizeReasoningEvent(parsed);
+            if (reasoningEvent?.kind === 'delta' || reasoningEvent?.kind === 'redacted') {
+              thinkingText += reasoningEvent.text;
+              onThinking?.(reasoningEvent.text, thinkingText, reasoningEvent.source);
+            }
+            if (reasoningEvent?.kind === 'summary' && onSystem) {
+              onSystem('thinking_summary', reasoningEvent.text, parsed);
             }
             if (parsed.type === 'tool_use_start' && onToolUse) {
               onToolUse({ type: 'start', tool_use_id: parsed.tool_use_id, tool_name: parsed.tool_name, tool_input: parsed.tool_input, textBefore: parsed.textBefore || '' });
@@ -2013,7 +2028,7 @@ export async function sendMessage(
   onDelta: (delta: string, full: string) => void,
   onDone: (full: string) => void,
   onError: (err: string) => void,
-  onThinking?: (thinking: string, full: string) => void,
+  onThinking?: (thinking: string, full: string, source?: ReasoningSource) => void,
   onSystem?: (event: string, message: string, data: any) => void,
   onCitations?: (citations: Array<{ url: string; title: string; cited_text?: string }>, query?: string, tokens?: number) => void,
   onDocument?: (document: { id: string; title: string; filename: string; url: string; content?: string; format?: 'markdown' | 'docx' | 'pptx'; slides?: Array<{ title: string; content: string; notes?: string }> }) => void,
@@ -2078,6 +2093,7 @@ export async function sendMessage(
     let thinkingText = '';
     let pendingTextDelta = '';
     let pendingThinkingDelta = '';
+    let pendingThinkingSource: ReasoningSource | undefined;
     let flushScheduled = false;
     const INLINE_ARTIFACT_OPEN = '<cp_artifact';
     const INLINE_ARTIFACT_CLOSE = '</cp_artifact>';
@@ -2095,7 +2111,9 @@ export async function sendMessage(
       if (pendingThinkingDelta && onThinking) {
         const delta = pendingThinkingDelta;
         pendingThinkingDelta = '';
-        onThinking(delta, thinkingText);
+        const source = pendingThinkingSource;
+        pendingThinkingSource = undefined;
+        onThinking(delta, thinkingText, source);
       }
       if (pendingTextDelta) {
         const delta = pendingTextDelta;
@@ -2258,9 +2276,21 @@ export async function sendMessage(
             continue;
           }
 
-          if (parsed.type === 'thinking_summary' && parsed.summary) {
+          const reasoningEvent = normalizeReasoningEvent(parsed);
+
+          if (reasoningEvent?.kind === 'summary') {
             if (onSystem) {
-              onSystem('thinking_summary', parsed.summary, parsed);
+              onSystem('thinking_summary', reasoningEvent.text, parsed);
+            }
+            continue;
+          }
+
+          if (reasoningEvent?.kind === 'redacted') {
+            thinkingText += reasoningEvent.text;
+            if (onThinking) {
+              pendingThinkingDelta += reasoningEvent.text;
+              pendingThinkingSource = mergeReasoningSource(pendingThinkingSource, reasoningEvent.source);
+              scheduleFlush();
             }
             continue;
           }
@@ -2315,31 +2345,24 @@ export async function sendMessage(
           // 处理 thinking 内容
           if (parsed.type === 'content_block_delta' && parsed.delta) {
             if (parsed.delta.type === 'text_delta' && parsed.delta.text) {
-              const textChunk = parsed.delta.text;
-              // 处理中转 API 将 <thinking> 标签嵌入 text 的情况
-              if (textChunk.includes('<thinking>') || textChunk.includes('</thinking>')) {
-                const thinkRegex = /<thinking>([\s\S]*?)<\/thinking>/g;
-                let match;
-                let cleaned = textChunk;
-                while ((match = thinkRegex.exec(textChunk)) !== null) {
-                  if (onThinking) {
-                    thinkingText += match[1];
-                    pendingThinkingDelta += match[1];
-                    scheduleFlush();
-                  }
+              const compatibility = extractCompatibilityThinking(parsed.delta.text);
+              for (const reasoning of compatibility.reasoning) {
+                thinkingText += reasoning;
+                if (onThinking) {
+                  pendingThinkingDelta += reasoning;
+                  pendingThinkingSource = mergeReasoningSource(pendingThinkingSource, 'compatibility');
+                  scheduleFlush();
                 }
-                cleaned = textChunk.replace(/<thinking>[\s\S]*?<\/thinking>\s*/g, '');
-                if (cleaned) {
-                  processInlineArtifactText(cleaned);
-                }
-              } else {
-                processInlineArtifactText(textChunk);
+              }
+              if (compatibility.visibleText) {
+                processInlineArtifactText(compatibility.visibleText);
               }
             }
-            if (parsed.delta.type === 'thinking_delta' && parsed.delta.thinking) {
-              thinkingText += parsed.delta.thinking;
+            if (reasoningEvent?.kind === 'delta') {
+              thinkingText += reasoningEvent.text;
               if (onThinking) {
-                pendingThinkingDelta += parsed.delta.thinking;
+                pendingThinkingDelta += reasoningEvent.text;
+                pendingThinkingSource = mergeReasoningSource(pendingThinkingSource, reasoningEvent.source);
                 scheduleFlush();
               }
             }
