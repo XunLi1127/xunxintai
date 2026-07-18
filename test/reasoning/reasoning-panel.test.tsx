@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import ReasoningPanel from '../../src/components/ReasoningPanel';
 import { mergeReasoningSource } from '../../src/reasoning/types';
+import { createGenerationPlaceholder } from '../../src/reasoning/generationPlaceholder';
 
 afterEach(cleanup);
 
@@ -55,5 +56,29 @@ describe('mergeReasoningSource', () => {
     expect(mergeReasoningSource('provider', 'compatibility')).toBe('provider');
     expect(mergeReasoningSource('compatibility', 'provider')).toBe('provider');
     expect(mergeReasoningSource(undefined, undefined)).toBe('provider');
+  });
+});
+
+describe('polling generation placeholder', () => {
+  it('新建 assistant 占位时把兼容来源和中断状态传入面板', () => {
+    const placeholder = createGenerationPlaceholder({
+      text: '',
+      thinking: '中转已返回片段',
+      thinkingSource: 'compatibility',
+      thinkingInterrupted: true,
+    });
+
+    render(
+      <ReasoningPanel
+        reasoning={placeholder.thinking}
+        source={placeholder.thinkingSource}
+        interrupted={placeholder.thinkingInterrupted}
+        defaultExpanded
+      />,
+    );
+
+    expect(placeholder.role).toBe('assistant');
+    expect(screen.getByText('兼容通道返回')).toBeInTheDocument();
+    expect(screen.getByText('思考流已中断')).toBeInTheDocument();
   });
 });

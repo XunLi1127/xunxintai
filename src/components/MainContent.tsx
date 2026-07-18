@@ -22,6 +22,7 @@ import { UiLanguage, getStoredUiLanguage, useClientLanguageText } from '../utils
 import { CHAT_STYLES_EVENT, ChatStyle, clearConversationChatStyleId, getAllChatStyles, getChatStyleDescription, getChatStyleLabel, getDefaultChatStyleId, getEffectiveChatStyle, setConversationChatStyleId } from '../utils/chatStyles';
 import ReasoningPanel from './ReasoningPanel';
 import { mergeReasoningSource, type ReasoningSource } from '../reasoning/types';
+import { createGenerationPlaceholder } from '../reasoning/generationPlaceholder';
 
 function formatChatError(err: string): string {
   const lower = (err || '').toLowerCase();
@@ -2376,15 +2377,11 @@ const MainContent = ({ onNewChat, resetKey, tunerConfig, onOpenDocument, onArtif
               return newMsgs;
             }
             // 追加新的 assistant 占位
-            return [...prev, mergeDocumentsIntoMessage({
-              role: 'assistant',
-              content: genStatus.text || '',
-              thinking: genStatus.thinking || '',
-              thinkingSummary: genStatus.thinkingSummary,
-              citations: genStatus.citations,
-              searchLogs: genStatus.searchLogs,
-              isThinking: !genStatus.text && !!genStatus.thinking,
-            }, genStatus.document, genStatus.documents)];
+            return [...prev, mergeDocumentsIntoMessage(
+              createGenerationPlaceholder(genStatus),
+              genStatus.document,
+              genStatus.documents,
+            )];
           });
           setLoading(true);
           isAtBottomRef.current = true;
