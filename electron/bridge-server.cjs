@@ -10,6 +10,7 @@ const { execFileSync, spawnSync } = require('child_process');
 const { createHash } = require('crypto');
 const { TOOL_DEFINITIONS, executeTool, setAccessConfigPath } = require('./tools.cjs');
 const { runResearchPipeline } = require('./research-orchestrator.cjs');
+const { composeSystemPrompt, loadProductPrompt } = require('./prompt-loader.cjs');
 
 // Heuristic: when research_mode is enabled, decide whether THIS message
 // should actually trigger the research pipeline. Greetings, very short
@@ -30,23 +31,19 @@ function enableNodeModeForChildProcesses() {
     console.log('[Engine] Direct API mode 鈥?no SDK subprocess needed');
 }
 
-// Load custom system prompt (only affects this Electron app, not external CLI usage)
-const CUSTOM_SYSTEM_PROMPT_PATH = path.join(__dirname, 'system-prompt.txt');
-let customSystemPromptFull = '';  // Full prompt including anti-Kiro sections (for Clawparrot)
-let customSystemPromptClean = ''; // Without anti-Kiro sections (for self-hosted)
+// Load the product prompt once at startup. Project/user CLAUDE.md instructions remain
+// owned by the engine and keep their existing paths and precedence.
+let customSystemPromptFull = '';
+let customSystemPromptClean = '';
 try {
-    if (fs.existsSync(CUSTOM_SYSTEM_PROMPT_PATH)) {
-        customSystemPromptFull = fs.readFileSync(CUSTOM_SYSTEM_PROMPT_PATH, 'utf8');
-        // Strip <override_instructions> and <identity> blocks for self-hosted users
-        customSystemPromptClean = customSystemPromptFull
-            .replace(/<override_instructions>[\s\S]*?<\/override_instructions>\s*/g, '')
-            .replace(/<identity>[\s\S]*?<\/identity>\s*/g, '');
-        console.log(`[System Prompt] Loaded (full=${customSystemPromptFull.length}, clean=${customSystemPromptClean.length} chars)`);
-    } else {
-        console.warn('[System Prompt] Custom prompt file not found at:', CUSTOM_SYSTEM_PROMPT_PATH);
-    }
+    const loadedProductPrompt = loadProductPrompt(__dirname);
+    customSystemPromptFull = loadedProductPrompt.prompt;
+    customSystemPromptClean = loadedProductPrompt.cleanPrompt;
+    console.log(`[System Prompt] Loaded source=${loadedProductPrompt.source} (full=${customSystemPromptFull.length}, clean=${customSystemPromptClean.length} chars)`);
+    if (loadedProductPrompt.deprecationMessage) console.warn('[System Prompt]', loadedProductPrompt.deprecationMessage);
 } catch (e) {
     console.error('[System Prompt] Failed to load:', e.message);
+    throw e;
 }
 
 function initServer(mainWindow) {
@@ -7656,7 +7653,8 @@ You have the following skills available. When a user's request matches a skill's
     function isEngineAlive(eng) { return eng && eng.child && !eng.child.killed && eng.child.exitCode === null; }
 
     function buildChatSystemPrompt(conv, user_mode, user_profile) {
-        let sysPrompt = (user_mode === 'selfhosted' ? customSystemPromptClean : customSystemPromptFull) || '';
+        const productPrompt = (user_mode === 'selfhosted' ? customSystemPromptClean : customSystemPromptFull) || '';
+        let sysPrompt = '';
         const agentConfig = readAgentConfig();
         if (user_profile) {
             const parts = [];
@@ -7707,7 +7705,7 @@ You have the following skills available. When a user's request matches a skill's
                 }
             }
         }
-        return sysPrompt;
+        return composeSystemPrompt(productPrompt, [sysPrompt]);
     }
     function resolveChatConfig(conv, user_mode, env_token, env_base_url, requestedProviderId) {
         const rawModel = conv.model || 'claude-sonnet-4-6';
