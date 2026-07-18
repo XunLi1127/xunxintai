@@ -85,6 +85,7 @@ import {
   Project,
 } from '../api';
 import ProviderSettings from './ProviderSettings';
+import AppearancePetSettings from './appearance/AppearancePetSettings';
 import {
   ChatStyle,
   createCustomChatStyle,
@@ -105,6 +106,7 @@ type PermissionMode = 'workspace_write' | 'project' | 'full_access';
 type SettingsSection =
   | 'general'
   | 'appearance'
+  | 'appearance-pet'
   | 'models'
   | 'personalization'
   | 'permissions'
@@ -503,7 +505,8 @@ const DENSITY_OPTIONS: PickerOption[] = [
 
 const SETTING_NAV_META: Record<SettingsSection, { label: string; icon: React.ComponentType<{ size?: number; className?: string }>; badge?: string }> = {
   general: { label: '常规', icon: MonitorCog },
-  appearance: { label: '外观', icon: Palette },
+  appearance: { label: '界面', icon: Palette },
+  'appearance-pet': { label: '外观与桌宠', icon: Palette },
   models: { label: '模型', icon: Bot },
   personalization: { label: '个性化', icon: UserRound },
   permissions: { label: '权限', icon: ShieldCheck },
@@ -797,6 +800,7 @@ const SettingsPage = ({ onClose }: SettingsPageProps) => {
     const validSections: SettingsSection[] = [
       'general',
       'appearance',
+      'appearance-pet',
       'models',
       'personalization',
       'permissions',
@@ -815,7 +819,6 @@ const SettingsPage = ({ onClose }: SettingsPageProps) => {
   const [uiLanguage, setUiLanguage] = useState<UiLanguage>(getStoredUiLanguage());
   const isZh = uiLanguage === 'zh-CN';
   const [uiDensity, setUiDensity] = useState(localStorage.getItem('ui_density') || 'compact');
-  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
   const [chatFont, setChatFont] = useState(localStorage.getItem('chat_font') || 'default');
   const [defaultOpenTarget, setDefaultOpenTarget] = useState(localStorage.getItem('default_open_target') || 'vscode');
   const [integratedShell, setIntegratedShell] = useState(localStorage.getItem('integrated_shell') || 'powershell');
@@ -1040,7 +1043,6 @@ const SettingsPage = ({ onClose }: SettingsPageProps) => {
           setDisplayName(nextProfile.display_name || nextProfile.nickname || '');
           setWorkFunction(nextProfile.work_function || '');
           setPersonalPreferences(nextProfile.personal_preferences || '');
-          setTheme(nextProfile.theme || localStorage.getItem('theme') || 'dark');
           setChatFont(nextProfile.chat_font || localStorage.getItem('chat_font') || 'default');
           setDefaultModel(nextProfile.default_model || localStorage.getItem('default_model') || 'claude-opus-4-8-thinking');
         }
@@ -1241,7 +1243,8 @@ const SettingsPage = ({ onClose }: SettingsPageProps) => {
   const navItems = useMemo(() => {
     const items: Array<{ key: SettingsSection; label: string; badge?: string }> = [
       { key: 'general', label: '常规' },
-      { key: 'appearance', label: '外观' },
+      { key: 'appearance-pet', label: '外观与桌宠' },
+      { key: 'appearance', label: '界面' },
       ...(isSelfHosted ? [{ key: 'models', label: '模型' as const }] : []),
       { key: 'personalization', label: '个性化' },
       { key: 'permissions', label: '权限' },
@@ -1292,7 +1295,6 @@ const SettingsPage = ({ onClose }: SettingsPageProps) => {
       display_name: displayName,
       work_function: workFunction,
       personal_preferences: personalPreferences,
-      theme,
       chat_font: chatFont,
     };
 
@@ -1309,26 +1311,6 @@ const SettingsPage = ({ onClose }: SettingsPageProps) => {
       window.setTimeout(() => setSaveMsg(''), 2000);
     } catch (error: any) {
       setSaveMsg(error?.message || '保存失败');
-    }
-  };
-
-  const applyTheme = (nextTheme: string) => {
-    setTheme(nextTheme);
-    localStorage.setItem('theme', nextTheme);
-    const root = document.documentElement;
-    if (nextTheme === 'dark') {
-      root.setAttribute('data-theme', 'dark');
-      root.classList.add('dark');
-    } else if (nextTheme === 'auto') {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      root.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
-      root.classList.toggle('dark', prefersDark);
-    } else {
-      root.setAttribute('data-theme', 'light');
-      root.classList.remove('dark');
-    }
-    if (!isSelfHosted) {
-      updateUserProfile({ theme: nextTheme }).catch(() => {});
     }
   };
 
@@ -2216,29 +2198,6 @@ const SettingsPage = ({ onClose }: SettingsPageProps) => {
       case 'appearance':
         return (
           <div className="space-y-5">
-            <SectionCard title="外观" subtitle="把最影响观感的几项集中到一起，顺手做一轮界面收紧。">
-              <div className="grid grid-cols-3 gap-3">
-                {[
-                  { value: 'light', label: '浅色' },
-                  { value: 'auto', label: '跟随系统' },
-                  { value: 'dark', label: '深色' },
-                ].map((item) => {
-                  const active = theme === item.value;
-                  return (
-                    <button
-                      key={item.value}
-                      onClick={() => applyTheme(item.value)}
-                      className={`rounded-xl border px-4 py-4 text-left transition-all ${
-                        active ? 'border-[#2E7CF6]/40 bg-[#2E7CF6]/10' : 'border-claude-border hover:bg-claude-hover'
-                      }`}
-                    >
-                      <div className="text-[14px] font-medium text-claude-text">{item.label}</div>
-                    </button>
-                  );
-                })}
-              </div>
-            </SectionCard>
-
             <SectionCard title="聊天字体" subtitle="你提到内容偏大、不够紧凑，所以这里保留字体和密度两层调节。">
               <div className="grid grid-cols-4 gap-3">
                 {[
@@ -2275,6 +2234,9 @@ const SettingsPage = ({ onClose }: SettingsPageProps) => {
             </SectionCard>
           </div>
         );
+
+      case 'appearance-pet':
+        return <AppearancePetSettings />;
 
       case 'models':
         return (
