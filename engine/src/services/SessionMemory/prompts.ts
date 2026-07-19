@@ -8,80 +8,82 @@ import { logError } from '../../utils/log.js'
 const MAX_SECTION_LENGTH = 2000
 const MAX_TOTAL_SESSION_MEMORY_TOKENS = 12000
 
+// 洵心台：会话笔记模板已汉化
 export const DEFAULT_SESSION_MEMORY_TEMPLATE = `
-# Session Title
-_A short and distinctive 5-10 word descriptive title for the session. Super info dense, no filler_
+# 会话标题
+_简短而有辨识度的 5-10 字描述性标题。信息密度高，不加废话_
 
-# Current State
-_What is actively being worked on right now? Pending tasks not yet completed. Immediate next steps._
+# 当前状态
+_当前正在做什么？尚未完成的待办事项。下一步立即要做的事。_
 
-# Task specification
-_What did the user ask to build? Any design decisions or other explanatory context_
+# 任务说明
+_用户要求构建什么？有哪些设计决策或其他说明性上下文_
 
-# Files and Functions
-_What are the important files? In short, what do they contain and why are they relevant?_
+# 文件与函数
+_哪些文件是重要的？简要说明它们包含什么以及为什么相关_
 
-# Workflow
-_What bash commands are usually run and in what order? How to interpret their output if not obvious?_
+# 工作流程
+_通常运行哪些 bash 命令，按什么顺序？如果输出不直观，如何解读_
 
-# Errors & Corrections
-_Errors encountered and how they were fixed. What did the user correct? What approaches failed and should not be tried again?_
+# 错误与修正
+_遇到了哪些错误，如何修复的。用户纠正了什么？哪些方法失败了，不应该再试_
 
-# Codebase and System Documentation
-_What are the important system components? How do they work/fit together?_
+# 代码库与系统文档
+_重要的系统组件有哪些？它们如何工作/配合_
 
-# Learnings
-_What has worked well? What has not? What to avoid? Do not duplicate items from other sections_
+# 经验教训
+_哪些做得好？哪些不好？应该避免什么？不要与其他部分重复_
 
-# Key results
-_If the user asked a specific output such as an answer to a question, a table, or other document, repeat the exact result here_
+# 关键结果
+_如果用户要求了特定输出（如问题的答案、表格或其他文档），在此重复确切结果_
 
-# Worklog
-_Step by step, what was attempted, done? Very terse summary for each step_
+# 工作日志
+_逐步记录尝试了什么、做了什么。每步极简摘要_
 `
 
+// 洵心台：会话笔记更新提示词已汉化
 function getDefaultUpdatePrompt(): string {
-  return `IMPORTANT: This message and these instructions are NOT part of the actual user conversation. Do NOT include any references to "note-taking", "session notes extraction", or these update instructions in the notes content.
+  return `重要提示：本消息和这些指令不是用户实际对话的一部分。不要在笔记内容中提及"记笔记""会话笔记提取"或这些更新指令。
 
-Based on the user conversation above (EXCLUDING this note-taking instruction message as well as system prompt, claude.md entries, or any past session summaries), update the session notes file.
+根据上方用户对话（排除本记笔记指令消息、系统提示词、CLAUDE.md 条目以及任何过去的会话摘要），更新会话笔记文件。
 
-The file {{notesPath}} has already been read for you. Here are its current contents:
+文件 {{notesPath}} 已为你读取。以下是其当前内容：
 <current_notes_content>
 {{currentNotes}}
 </current_notes_content>
 
-Your ONLY task is to use the Edit tool to update the notes file, then stop. You can make multiple edits (update every section as needed) - make all Edit tool calls in parallel in a single message. Do not call any other tools.
+你唯一的任务是使用 Edit 工具更新笔记文件，然后停止。你可以进行多次编辑（根据需要更新每个部分）——在单条消息中并行发出所有 Edit 工具调用。不要调用任何其他工具。
 
-CRITICAL RULES FOR EDITING:
-- The file must maintain its exact structure with all sections, headers, and italic descriptions intact
--- NEVER modify, delete, or add section headers (the lines starting with '#' like # Task specification)
--- NEVER modify or delete the italic _section description_ lines (these are the lines in italics immediately following each header - they start and end with underscores)
--- The italic _section descriptions_ are TEMPLATE INSTRUCTIONS that must be preserved exactly as-is - they guide what content belongs in each section
--- ONLY update the actual content that appears BELOW the italic _section descriptions_ within each existing section
--- Do NOT add any new sections, summaries, or information outside the existing structure
-- Do NOT reference this note-taking process or instructions anywhere in the notes
-- It's OK to skip updating a section if there are no substantial new insights to add. Do not add filler content like "No info yet", just leave sections blank/unedited if appropriate.
-- Write DETAILED, INFO-DENSE content for each section - include specifics like file paths, function names, error messages, exact commands, technical details, etc.
-- For "Key results", include the complete, exact output the user requested (e.g., full table, full answer, etc.)
-- Do not include information that's already in the CLAUDE.md files included in the context
-- Keep each section under ~${MAX_SECTION_LENGTH} tokens/words - if a section is approaching this limit, condense it by cycling out less important details while preserving the most critical information
-- Focus on actionable, specific information that would help someone understand or recreate the work discussed in the conversation
-- IMPORTANT: Always update "Current State" to reflect the most recent work - this is critical for continuity after compaction
+编辑的关键规则：
+- 文件必须保持其精确结构，所有部分、标题和斜体描述保持完整
+-- 绝不修改、删除或添加部分标题（以 # 开头的行，如 # 任务说明）
+-- 绝不修改或删除斜体 _部分描述_ 行（紧接每个标题下方的斜体行——以 _ 开头和结尾）
+-- 斜体 _部分描述_ 是模板指令，必须原样保留——它们指导每个部分应包含什么内容
+-- 只更新每个已有部分中 _部分描述_ 下方的内容
+-- 不要在现有结构外添加新部分、摘要或信息
+- 绝不在笔记中引用此记笔记过程或指令
+- 如果某个部分没有实质性的新见解，可以跳过。不要添加"暂无信息"之类的填充内容，适当时留空即可
+- 为每个部分写详细、信息密集的内容——包含文件路径、函数名、错误消息、确切命令、技术细节等
+- 对于"关键结果"，包含用户要求的完整、确切的输出（如完整表格、完整答案等）
+- 不要包含 CLAUDE.md 文件中已有的信息
+- 每个部分保持在 ~${MAX_SECTION_LENGTH} tokens/词以内——如果接近此限制，通过循环淘汰次要细节、保留最关键信息来精简
+- 聚焦于可操作、具体的信息，能帮助理解或重现对话中讨论的工作
+- 重要：始终更新"当前状态"以反映最近的工作——这对压缩后的连续性至关重要
 
-Use the Edit tool with file_path: {{notesPath}}
+使用 Edit 工具，file_path: {{notesPath}}
 
-STRUCTURE PRESERVATION REMINDER:
-Each section has TWO parts that must be preserved exactly as they appear in the current file:
-1. The section header (line starting with #)
-2. The italic description line (the _italicized text_ immediately after the header - this is a template instruction)
+结构保持提醒：
+每个部分有两部分必须保持与文件中当前出现的内容完全一致：
+1. 部分标题（以 # 开头的行）
+2. 斜体描述行（标题后紧接的 _斜体文本_ ——这是模板指令）
 
-You ONLY update the actual content that comes AFTER these two preserved lines. The italic description lines starting and ending with underscores are part of the template structure, NOT content to be edited or removed.
+你只更新这两行保留内容之后的内容。以下划线开头和结尾的斜体描述行是模板结构的一部分，不是要编辑或删除的内容。
 
-REMEMBER: Use the Edit tool in parallel and stop. Do not continue after the edits. Only include insights from the actual user conversation, never from these note-taking instructions. Do not delete or change section headers or italic _section descriptions_.`
+记住：并行使用 Edit 工具然后停止。编辑完成后不要继续。只包含用户实际对话中的见解，绝不要来自这些记笔记指令。不要删除或更改部分标题或斜体 _部分描述_。`
 }
 
 /**
- * Load custom session memory template from file if it exists
+ * 从文件加载自定义会话笔记模板（如存在）
  */
 export async function loadSessionMemoryTemplate(): Promise<string> {
   const templatePath = join(
@@ -104,9 +106,9 @@ export async function loadSessionMemoryTemplate(): Promise<string> {
 }
 
 /**
- * Load custom session memory prompt from file if it exists
- * Custom prompts can be placed at ~/.claude/session-memory/prompt.md
- * Use {{variableName}} syntax for variable substitution (e.g., {{currentNotes}}, {{notesPath}})
+ * 从文件加载自定义会话笔记更新提示词（如存在）
+ * 自定义提示词可放在 ~/.claude/session-memory/prompt.md
+ * 使用 {{变量名}} 语法进行变量替换（如 {{currentNotes}}、{{notesPath}}）
  */
 export async function loadSessionMemoryPrompt(): Promise<string> {
   const promptPath = join(
@@ -129,7 +131,7 @@ export async function loadSessionMemoryPrompt(): Promise<string> {
 }
 
 /**
- * Parse the session memory file and analyze section sizes
+ * 解析会话笔记文件并分析各部分大小
  */
 function analyzeSectionSizes(content: string): Record<string, number> {
   const sections: Record<string, number> = {}
@@ -159,7 +161,7 @@ function analyzeSectionSizes(content: string): Record<string, number> {
 }
 
 /**
- * Generate reminders for sections that are too long
+ * 为过长的部分生成提醒
  */
 function generateSectionReminders(
   sectionSizes: Record<string, number>,
@@ -171,7 +173,7 @@ function generateSectionReminders(
     .sort(([, a], [, b]) => b - a)
     .map(
       ([section, tokens]) =>
-        `- "${section}" is ~${tokens} tokens (limit: ${MAX_SECTION_LENGTH})`,
+        `- "${section}" 约 ${tokens} tokens（限制：${MAX_SECTION_LENGTH}）`,
     )
 
   if (oversizedSections.length === 0 && !overBudget) {
@@ -182,13 +184,13 @@ function generateSectionReminders(
 
   if (overBudget) {
     parts.push(
-      `\n\nCRITICAL: The session memory file is currently ~${totalTokens} tokens, which exceeds the maximum of ${MAX_TOTAL_SESSION_MEMORY_TOKENS} tokens. You MUST condense the file to fit within this budget. Aggressively shorten oversized sections by removing less important details, merging related items, and summarizing older entries. Prioritize keeping "Current State" and "Errors & Corrections" accurate and detailed.`,
+      `\n\n严重警告：会话笔记文件当前约 ${totalTokens} tokens，超过最大值 ${MAX_TOTAL_SESSION_MEMORY_TOKENS} tokens。你必须精简文件以适应此预算。积极缩短过大部分，删除次要细节，合并相关条目，总结旧记录。优先保持"当前状态"和"错误与修正"准确详细。`,
     )
   }
 
   if (oversizedSections.length > 0) {
     parts.push(
-      `\n\n${overBudget ? 'Oversized sections to condense' : 'IMPORTANT: The following sections exceed the per-section limit and MUST be condensed'}:\n${oversizedSections.join('\n')}`,
+      `\n\n${overBudget ? '需要精简的过大部分' : '重要：以下部分超出每部分限制，必须精简'}：\n${oversizedSections.join('\n')}`,
     )
   }
 
@@ -196,15 +198,14 @@ function generateSectionReminders(
 }
 
 /**
- * Substitute variables in the prompt template using {{variable}} syntax
+ * 使用 {{变量}} 语法替换提示词模板中的变量
  */
 function substituteVariables(
   template: string,
   variables: Record<string, string>,
 ): string {
-  // Single-pass replacement avoids two bugs: (1) $ backreference corruption
-  // (replacer fn treats $ literally), and (2) double-substitution when user
-  // content happens to contain {{varName}} matching a later variable.
+  // 单次替换避免两个 bug：(1) $ 反向引用损坏（替换函数将 $ 按字面处理），
+  // (2) 用户内容碰巧包含 {{变量名}} 匹配后续变量时的双重替换。
   return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>
     Object.prototype.hasOwnProperty.call(variables, key)
       ? variables[key]!
@@ -213,13 +214,11 @@ function substituteVariables(
 }
 
 /**
- * Check if the session memory content is essentially empty (matches the template).
- * This is used to detect if no actual content has been extracted yet,
- * which means we should fall back to legacy compact behavior.
+ * 检查会话笔记内容是否基本为空（与模板一致）。
+ * 用于检测是否尚未提取任何实际内容，若是则应回退到旧版压缩行为。
  */
 export async function isSessionMemoryEmpty(content: string): Promise<boolean> {
   const template = await loadSessionMemoryTemplate()
-  // Compare trimmed content to detect if it's just the template
   return content.trim() === template.trim()
 }
 
@@ -229,36 +228,31 @@ export async function buildSessionMemoryUpdatePrompt(
 ): Promise<string> {
   const promptTemplate = await loadSessionMemoryPrompt()
 
-  // Analyze section sizes and generate reminders if needed
   const sectionSizes = analyzeSectionSizes(currentNotes)
   const totalTokens = roughTokenCountEstimation(currentNotes)
   const sectionReminders = generateSectionReminders(sectionSizes, totalTokens)
 
-  // Substitute variables in the prompt
   const variables = {
     currentNotes,
     notesPath,
   }
 
   const basePrompt = substituteVariables(promptTemplate, variables)
-
-  // Add section size reminders and/or total budget warnings
   return basePrompt + sectionReminders
 }
 
 /**
- * Truncate session memory sections that exceed the per-section token limit.
- * Used when inserting session memory into compact messages to prevent
- * oversized session memory from consuming the entire post-compact token budget.
+ * 截断超出每部分 token 限制的会话笔记部分。
+ * 用于将会话笔记插入压缩消息时，防止过大的会话笔记消耗全部压缩后 token 预算。
  *
- * Returns the truncated content and whether any truncation occurred.
+ * 返回截断后的内容和是否发生了截断。
  */
 export function truncateSessionMemoryForCompact(content: string): {
   truncatedContent: string
   wasTruncated: boolean
 } {
   const lines = content.split('\n')
-  const maxCharsPerSection = MAX_SECTION_LENGTH * 4 // roughTokenCountEstimation uses length/4
+  const maxCharsPerSection = MAX_SECTION_LENGTH * 4
   const outputLines: string[] = []
   let currentSectionLines: string[] = []
   let currentSectionHeader = ''
@@ -280,7 +274,6 @@ export function truncateSessionMemoryForCompact(content: string): {
     }
   }
 
-  // Flush the last section
   const result = flushSessionSection(
     currentSectionHeader,
     currentSectionLines,
@@ -309,7 +302,6 @@ function flushSessionSection(
     return { lines: [sectionHeader, ...sectionLines], wasTruncated: false }
   }
 
-  // Truncate at a line boundary near the limit
   let charCount = 0
   const keptLines: string[] = [sectionHeader]
   for (const line of sectionLines) {
@@ -319,6 +311,6 @@ function flushSessionSection(
     keptLines.push(line)
     charCount += line.length + 1
   }
-  keptLines.push('\n[... section truncated for length ...]')
+  keptLines.push('\n[... 部分因长度截断 ...]')
   return { lines: keptLines, wasTruncated: true }
 }
