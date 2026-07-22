@@ -461,7 +461,7 @@ app.whenReady().then(() => {
     }
 
     // Start Bridge Server
-    const bridge = initServer();
+    const bridge = initServer(undefined, { petAvailable: Boolean(petManager.sidecar) });
     const server = bridge.listen(30080, '127.0.0.1', () => {
         console.log('Bridge Server running on http://127.0.0.1:30080');
     });

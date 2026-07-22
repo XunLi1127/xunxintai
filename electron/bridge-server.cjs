@@ -16,6 +16,7 @@ const { validateInputEvidence } = require('./input-evidence-gate.cjs');
 const { createInputRequestTransaction, rejectInputEvidence, writeEngineInput, runResearchTransaction } = require('./input-request-transaction.cjs');
 const { createPendingInputImages, injectPendingInputImages } = require('./pending-input-images.cjs');
 const { createProxyContextRegistry } = require('./proxy-context-registry.cjs');
+const { registerCapabilityDiagnosticsRoute } = require('./capability-diagnostics.cjs');
 
 // Heuristic: when research_mode is enabled, decide whether THIS message
 // should actually trigger the research pipeline. Greetings, very short
@@ -51,7 +52,7 @@ try {
     throw e;
 }
 
-function initServer(mainWindow) {
+function initServer(mainWindow, capabilityState = {}) {
     const server = express();
 
     // ── Origin 白名单 (安全关键) ──────────────────────────────
@@ -3387,6 +3388,13 @@ if __name__ == "__main__":
             },
         });
     });
+    registerCapabilityDiagnosticsRoute(server, () => ({
+        appVersion: app.getVersion(),
+        bunAvailable: Boolean(bunExePath),
+        gitBashAvailable: gitBashDiagnostic.ok,
+        petAvailable: capabilityState.petAvailable === true,
+        evidenceGateAvailable: typeof validateInputEvidence === 'function',
+    }));
     server.get('/api/providers', (req, res) => {
         let changed = false;
         providers = providers.map((provider) => {
