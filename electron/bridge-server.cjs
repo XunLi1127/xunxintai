@@ -11,6 +11,7 @@ const { createHash } = require('crypto');
 const { TOOL_DEFINITIONS, executeTool, setAccessConfigPath } = require('./tools.cjs');
 const { runResearchPipeline } = require('./research-orchestrator.cjs');
 const { composeSystemPrompt, loadProductPrompt } = require('./prompt-loader.cjs');
+const { createEvidenceLedger, processAttachmentEvidence } = require('./evidence-ledger.cjs');
 
 // Heuristic: when research_mode is enabled, decide whether THIS message
 // should actually trigger the research pipeline. Greetings, very short
@@ -3080,7 +3081,7 @@ if __name__ == "__main__":
             cb(null, dir);
         },
         filename: (req, file, cb) => {
-            cb(null, Date.now() + '-' + file.originalname);
+            cb(null, uuidv4());
         }
     });
     const upload = multer({ storage });
@@ -8073,6 +8074,11 @@ You have the following skills available. When a user's request matches a skill's
         const sendSSE = (data) => { var stream = activeStreams.get(conversation_id); if (stream) { stream.events.push(data); var line = 'data: ' + JSON.stringify(data) + '\n\n'; var arr = Array.from(stream.listeners); for (var i = 0; i < arr.length; i++) { try { arr[i].write(line); } catch (_) { stream.listeners.delete(arr[i]); } } } try { res.write('data: ' + JSON.stringify(data) + '\n\n'); } catch (_) {} };
 
         try {
+            const evidenceLedger = createEvidenceLedger();
+            evidenceLedger.record({
+                kind: 'user_text', status: 'available', access: 'text_supplied',
+                label: '用户消息', reason: 'user_text_supplied',
+            });
             // /skill-name is passed as-is to the engine 鈥?the engine handles
             // slash commands internally (injects SKILL.md content into context).
             // Send a synthetic tool event so the frontend shows "Reading SKILL.md"
@@ -8094,6 +8100,10 @@ You have the following skills available. When a user's request matches a skill's
                 if (fs.existsSync(ghMetaPath)) {
                     const ghMeta = JSON.parse(fs.readFileSync(ghMetaPath, 'utf8'));
                     if (ghMeta && Array.isArray(ghMeta.repos) && ghMeta.repos.length > 0) {
+                        evidenceLedger.record({
+                            kind: 'github_workspace', status: 'available', access: 'workspace_file',
+                            label: 'GitHub 工作区索引', reason: 'github_index_loaded',
+                        });
                         let ghBlock = '\n\n[GitHub content available in this workspace:]\n';
                         for (const r of ghMeta.repos) {
                             if (!r || !r.repo) continue;
@@ -8116,65 +8126,43 @@ You have the following skills available. When a user's request matches a skill's
                     }
                 }
             } catch (e) {
-                console.warn('[Chat] GitHub context inject failed:', e.message);
+                console.warn('[Chat] GitHub context inject failed: github_index_invalid');
+                evidenceLedger.record({
+                    kind: 'github_workspace', status: 'unavailable', access: 'none',
+                    label: 'GitHub 工作区索引', reason: 'github_index_invalid',
+                });
             }
 
             if (attachments && attachments.length > 0) {
-                const copiedFiles = [];
                 for (const att of attachments) {
                     // Skip virtual github attachments — they're not real uploaded files,
                     // the content is already materialized in workspace/github/ and injected via .github-context.json
-                    if (att && (att.source === 'github' || att.fileType === 'github')) continue;
-                    let srcPath = att.localPath;
-                    if (!srcPath && att.fileId) {
-                        for (const dir of [path.join(workspacesDir, conversation_id, '.uploads'), path.join(workspacesDir, 'temp', '.uploads')]) {
-                            if (srcPath) break;
-                            if (fs.existsSync(dir)) {
-                                const match = fs.readdirSync(dir).find(f => f === att.fileId || f.includes(att.fileId));
-                                if (match) srcPath = path.join(dir, match);
-                            }
+                    if (att && (att.source === 'github' || att.fileType === 'github')) {
+                        if (!fs.existsSync(path.join(conv.workspace_path, '.github-context.json'))) {
+                            evidenceLedger.record({
+                                kind: 'github_workspace', status: 'unavailable', access: 'none',
+                                label: 'GitHub 工作区索引', reason: 'github_index_missing',
+                            });
                         }
+                        continue;
                     }
-                    if (srcPath && fs.existsSync(srcPath)) {
-                        const fn = att.fileName || path.basename(srcPath);
-                        try { fs.copyFileSync(srcPath, path.join(conv.workspace_path, fn)); copiedFiles.push(fn); } catch (_) {}
-
-                        // Detect images 鈫?read base64 for proxy injection
-                        const ext = path.extname(fn).toLowerCase();
-                        if (['.png', '.jpg', '.jpeg', '.gif', '.webp'].includes(ext)) {
-                            console.log('[Chat] Image copied to workspace:', fn);
-                            imageFileNames.push(fn);
-                            try {
-                                const imgData = fs.readFileSync(srcPath);
-                                if (imgData.length > 100) {
-                                    const mimeMap = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
-                                    if (!pendingImageBlocks.has(conversation_id)) pendingImageBlocks.set(conversation_id, []);
-                                    pendingImageBlocks.get(conversation_id).push({
-                                        type: 'image',
-                                        source: { type: 'base64', media_type: mimeMap[ext] || 'image/png', data: imgData.toString('base64') }
-                                    });
-                                    console.log('[Chat] Image queued for proxy injection:', fn, imgData.length, 'bytes');
-                                }
-                            } catch (_) {}
-                        }
-                    }
-                }
-                if (copiedFiles.length > 0) {
-                    // Images are injected directly into the API request via the proxy,
-                    // but we also mention them here so the model knows they exist as files.
-                    if (imageFileNames.length > 0) {
-                        finalPrompt += '\n\n[The user attached image(s): ' + imageFileNames.join(', ') + '. The image(s) are included in this message 鈥?you can see them directly.]';
-                        const nonImages = copiedFiles.filter(f => !imageFileNames.includes(f));
-                        if (nonImages.length > 0) {
-                            finalPrompt += '\n[Other attached files 鈥?read only when needed:]\n';
-                            for (const fn of nonImages) finalPrompt += `- ./${fn}\n`;
-                        }
-                    } else {
-                        finalPrompt += '\n\n[Attached files in workspace 鈥?read only when needed:]\n';
-                        for (const fn of copiedFiles) finalPrompt += `- ./${fn}\n`;
-                    }
+                    if (!pendingImageBlocks.has(conversation_id)) pendingImageBlocks.set(conversation_id, []);
+                    const result = processAttachmentEvidence({
+                        attachment: att,
+                        uploadRoots: [
+                            path.join(workspacesDir, conversation_id, '.uploads'),
+                            path.join(workspacesDir, 'temp', '.uploads'),
+                        ],
+                        workspacePath: conv.workspace_path,
+                        ledger: evidenceLedger,
+                        pendingImageBlocks: pendingImageBlocks.get(conversation_id),
+                    });
+                    if (result.access === 'model_image') imageFileNames.push(result.label);
                 }
             }
+
+            const evidenceSnapshot = evidenceLedger.snapshot();
+            finalPrompt += `\n\n${evidenceLedger.toPromptBlock()}`;
 
             // 鈹€鈹€ 2. Save user message 鈹€鈹€
             // Generate the uuid here so we can pass the SAME uuid to engine stdin
@@ -8192,6 +8180,7 @@ You have the following skills available. When a user's request matches a skill's
                 content: JSON.stringify([{ type: 'text', text: persistedUserMessage }]),
                 created_at: new Date().toISOString(),
                 engineUuidSynced: true,
+                evidence: evidenceSnapshot,
                 attachments: attachments && attachments.length > 0 ? attachments.map(a => ({ fileId: a.fileId, fileName: a.fileName, fileType: a.fileType, mimeType: a.mimeType, size: a.size, source: a.source, gh_repo: a.ghRepo, gh_ref: a.ghRef })) : undefined
             });
             saveDb();
@@ -8209,7 +8198,7 @@ You have the following skills available. When a user's request matches a skill's
                     '| msgLen=', (message || '').length);
                 try {
                     const result = await runResearchPipeline({
-                        query: message,
+                        query: finalPrompt,
                         apiKey: config.apiKey,
                         baseUrl: config.baseUrl,
                         model: config.modelId,
