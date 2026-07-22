@@ -12,6 +12,10 @@ const { TOOL_DEFINITIONS, executeTool, setAccessConfigPath } = require('./tools.
 const { runResearchPipeline } = require('./research-orchestrator.cjs');
 const { composeSystemPrompt, loadProductPrompt } = require('./prompt-loader.cjs');
 const { createEvidenceLedger, processAttachmentEvidence } = require('./evidence-ledger.cjs');
+const { validateInputEvidence } = require('./input-evidence-gate.cjs');
+const { createInputRequestTransaction, rejectInputEvidence, writeEngineInput, runResearchTransaction } = require('./input-request-transaction.cjs');
+const { createPendingInputImages, injectPendingInputImages } = require('./pending-input-images.cjs');
+const { createProxyContextRegistry } = require('./proxy-context-registry.cjs');
 
 // Heuristic: when research_mode is enabled, decide whether THIS message
 // should actually trigger the research pipeline. Greetings, very short
@@ -1785,22 +1789,24 @@ if __name__ == "__main__":
     const http = require('http');
     let proxyPort = 0;
 
-    // Stored per-request: the proxy reads these to know where to forward
-    let proxyTarget = { apiKey: '', baseUrl: '', model: '', format: 'anthropic' };
+    // Each OpenAI-format persistent engine receives an unguessable route whose
+    // context is isolated from every other engine. Credentials never enter URLs.
+    const proxyContexts = createProxyContextRegistry();
 
-    // Pending image blocks to inject into the next API request (per-conversation)
-    // The chat handler stores base64 images here; the proxy injects them into the user message
-    const pendingImageBlocks = new Map();
+    // Pending image blocks are owned by one user-message/request UUID. The proxy
+    // receives that identity from the active turn and cannot consume a sibling turn.
+    const pendingImageBlocks = createPendingInputImages();
     const emptyToolCallLoops = new Map(); // conversationId -> { count, toolName, updatedAt } // conversationId 鈫?[{ type: 'image', source: { type: 'base64', media_type, data } }]
 
     const proxyServer = http.createServer(async (req, res) => {
         if (req.method === 'POST' && req.url.includes('/messages')) {
+            const target = proxyContexts.resolve(req.url);
+            if (!target) { res.writeHead(404, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'Unknown proxy route' })); }
             let body = '';
             req.on('data', c => body += c);
             req.on('end', async () => {
                 try {
                     const anthropicReq = JSON.parse(body);
-                    const target = proxyTarget;
                     const proxyReqId = 'proxy_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
                     console.log('[Proxy] Request start',
                         '| id=', proxyReqId,
@@ -1814,24 +1820,8 @@ if __name__ == "__main__":
                     // (images uploaded by the user that need to be embedded in the API request)
                     // Only inject into the initial user message (not tool_result follow-ups).
                     // Don't delete 鈥?keep for retries. The chat handler clears after engine exits.
-                    if (target.conversationId && pendingImageBlocks.has(target.conversationId)) {
-                        const imgBlocks = pendingImageBlocks.get(target.conversationId);
-                        if (imgBlocks && imgBlocks.length > 0 && anthropicReq.messages) {
-                            // Find the last user message that has text (not just tool_result)
-                            for (let i = anthropicReq.messages.length - 1; i >= 0; i--) {
-                                const msg = anthropicReq.messages[i];
-                                if (msg.role !== 'user') continue;
-                                const parts = Array.isArray(msg.content) ? msg.content : [{ type: 'text', text: msg.content }];
-                                const hasToolResult = parts.some(b => b.type === 'tool_result');
-                                if (hasToolResult) continue; // Skip tool_result messages
-                                const existingContent = Array.isArray(msg.content) ? msg.content : [{ type: 'text', text: msg.content }];
-                                // Don't inject if images already present (re-injection on retry)
-                                if (existingContent.some(b => b.type === 'image')) break;
-                                msg.content = [...imgBlocks, ...existingContent];
-                                console.log('[Proxy] Injected', imgBlocks.length, 'image block(s) into user message');
-                                break;
-                            }
-                        }
+                    if (injectPendingInputImages({ store: pendingImageBlocks, requestId: target.inputRequestId, messages: anthropicReq.messages })) {
+                        console.log('[Proxy] Injected request-owned image block(s) into user message');
                     }
 
                     // Intercept web_search_20250305 server tool for OpenAI providers.
@@ -7606,6 +7596,7 @@ You have the following skills available. When a user's request matches a skill's
             '| engine=', summarizeEngine(eng),
             '| pool=', summarizeEnginePool(),
             '| caller=', stackLines);
+        if (eng.proxyRouteId) proxyContexts.unregister(eng.proxyRouteId);
         engineLifecycle.kill(convId, eng);
     }
     function evictOldestEngine() {
@@ -7841,7 +7832,7 @@ You have the following skills available. When a user's request matches a skill's
         }
         if (turn.toolCalls.size > 0 && turn.lastToolDoneTextLen > 0) turn.sendSSE({ type: 'tool_text_offset', offset: turn.lastToolDoneTextLen });
         turn.sendSSE({ type: 'message_stats', stats: responseStats });
-        pendingImageBlocks.delete(convId);
+        pendingImageBlocks.finish(turn.inputRequestId);
         turn.sendSSE({ type: 'message_stop' });
         endStream(convId);
         if (turn.resolve) turn.resolve();
@@ -7849,6 +7840,7 @@ You have the following skills available. When a user's request matches a skill's
     function failTurnAndRecycleEngine(engine, convId, conv, reason, userError, extra) {
         const turn = engine && engine.turn;
         if (!turn) return;
+        pendingImageBlocks.finish(turn.inputRequestId);
         const meta = Object.assign({
             lastActivitySource: turn.lastActivitySource || 'unknown',
             startedAt: turn.startedAt || null,
@@ -7922,6 +7914,7 @@ You have the following skills available. When a user's request matches a skill's
         }
         if (sysPrompt) cliArgs.push('--append-system-prompt', sysPrompt);
         const envVars = Object.assign({}, process.env);
+        let proxyRegistration = null;
         if (gitBashPath && !envVars.CLAUDE_CODE_GIT_BASH_PATH) {
             envVars.CLAUDE_CODE_GIT_BASH_PATH = gitBashPath;
         }
@@ -7931,8 +7924,8 @@ You have the following skills available. When a user's request matches a skill's
             envVars.CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS = '80000';
         }
         if (apiFormat === 'openai' && proxyPort > 0) {
-            proxyTarget = { apiKey, baseUrl, model: modelId, format: 'openai', conversationId: convId, supportsWebSearch: config.supportsWebSearch === true, webSearchStrategy: config.webSearchStrategy || null };
-            envVars.ANTHROPIC_API_KEY = 'proxy-key'; envVars.ANTHROPIC_BASE_URL = 'http://127.0.0.1:' + proxyPort + '/v1';
+            proxyRegistration = proxyContexts.register({ apiKey, baseUrl, model: modelId, format: 'openai', conversationId: convId, supportsWebSearch: config.supportsWebSearch === true, webSearchStrategy: config.webSearchStrategy || null });
+            envVars.ANTHROPIC_API_KEY = 'proxy-key'; envVars.ANTHROPIC_BASE_URL = 'http://127.0.0.1:' + proxyPort + proxyRegistration.path;
             try { const warmUrl = new URL(normalizeBaseUrl(baseUrl)); require('dns').resolve4(warmUrl.hostname, () => {}); fetch(warmUrl.origin, { method: 'HEAD', signal: AbortSignal.timeout(5000) }).catch(() => {}); } catch (_) {}
             console.log('[EnginePool] OpenAI proxy, model=' + modelId);
         } else { if (apiKey) envVars.ANTHROPIC_API_KEY = apiKey; envVars.ANTHROPIC_BASE_URL = normalizeBaseUrl(baseUrl || engineEnvVars.ANTHROPIC_BASE_URL || 'https://api.anthropic.com'); }
@@ -7958,6 +7951,8 @@ You have the following skills available. When a user's request matches a skill's
             ready: false,
             readyPromise,
             resolveReady,
+            proxyRouteId: proxyRegistration && proxyRegistration.routeId,
+            proxyContext: proxyRegistration && proxyRegistration.context,
         };
 
         const handleEngineStdoutLine = (line) => {
@@ -7990,6 +7985,7 @@ You have the following skills available. When a user's request matches a skill's
         let stderrBuf = '';
         child.stderr.on('data', (c) => { stderrBuf += c.toString('utf8'); });
         child.on('close', (code) => {
+            if (engine.proxyRouteId) proxyContexts.unregister(engine.proxyRouteId);
             if (engine.buf && engine.buf.trim()) {
                 handleEngineStdoutLine(engine.buf);
                 engine.buf = '';
@@ -8011,6 +8007,7 @@ You have the following skills available. When a user's request matches a skill's
             engineLifecycle.remove(convId, engine);
         });
         child.on('error', (err) => {
+            if (engine.proxyRouteId) proxyContexts.unregister(engine.proxyRouteId);
             console.error('[EnginePool] Error:', err.message);
             if (!engine.ready && engine.resolveReady) { try { engine.resolveReady(); } catch (_) {} engine.resolveReady = null; }
             if (engine.state === 'processing' && engine.turn) {
@@ -8048,31 +8045,27 @@ You have the following skills available. When a user's request matches a skill's
         const { conversation_id, message, display_message, model, provider_id, attachments, env_token, env_base_url, user_mode, user_profile } = req.body;
         const conv = db.conversations.find(c => c.id === conversation_id);
         if (!conv) return res.status(404).json({ error: 'Conversation not found' });
-        if (model && model !== conv.model) {
-            console.log('[Chat] Request model override for conv', conversation_id, ':', conv.model, '->', model);
-            conv.model = model;
-        }
-        if ('provider_id' in req.body) {
-            const nextProviderId = String(provider_id || '').trim();
-            if (nextProviderId) conv.provider_id = nextProviderId;
-            else delete conv.provider_id;
-        }
-        if (model || 'provider_id' in req.body) saveDb();
+        const userMsgUuid = uuidv4();
+        const nextProviderId = String(provider_id || '').trim();
+        const requestCreatedFiles = [];
+        const inputTransaction = createInputRequestTransaction({
+            db, conv, conversationId: conversation_id, pendingRequestId: userMsgUuid, pendingImageBlocks,
+            fileSystem: fs, saveDb, createdFiles: requestCreatedFiles,
+        });
+        inputTransaction.stageConversationConfig({
+            model: model && model !== conv.model ? model : null,
+            providerPresent: Object.hasOwn(req.body, 'provider_id'),
+            providerId: nextProviderId,
+        });
         console.log('[Chat] Incoming request',
             '| conv=', conversation_id,
             '| msgLen=', (message || '').length,
             '| attachments=', Array.isArray(attachments) ? attachments.length : 0,
             '| user_mode=', user_mode,
-            '| model=', conv.model,
-            '| provider_id=', conv.provider_id || '(auto)',
+            '| model=', model || conv.model,
+            '| provider_id=', Object.hasOwn(req.body, 'provider_id') ? (nextProviderId || '(auto)') : (conv.provider_id || '(auto)'),
             '| pool=', summarizeEnginePool());
-        res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
-        res.flushHeaders();
-        activeStreams.set(conversation_id, { events: [], listeners: new Set(), done: false, primaryRes: res });
-        const sendSSE = (data) => { var stream = activeStreams.get(conversation_id); if (stream) { stream.events.push(data); var line = 'data: ' + JSON.stringify(data) + '\n\n'; var arr = Array.from(stream.listeners); for (var i = 0; i < arr.length; i++) { try { arr[i].write(line); } catch (_) { stream.listeners.delete(arr[i]); } } } try { res.write('data: ' + JSON.stringify(data) + '\n\n'); } catch (_) {} };
-
+        let sendSSE;
         try {
             const evidenceLedger = createEvidenceLedger();
             evidenceLedger.record({
@@ -8082,14 +8075,6 @@ You have the following skills available. When a user's request matches a skill's
             // /skill-name is passed as-is to the engine 鈥?the engine handles
             // slash commands internally (injects SKILL.md content into context).
             // Send a synthetic tool event so the frontend shows "Reading SKILL.md"
-            const skillInvokeMatch = message.match(/^\/([a-zA-Z0-9_-]+)(\s|$)/);
-            if (skillInvokeMatch) {
-                const skillSlug = skillInvokeMatch[1];
-                const fakeId = 'skill-invoke-' + Date.now();
-                sendSSE({ type: 'tool_use_start', tool_use_id: fakeId, tool_name: 'Skill', tool_input: { skill: skillSlug } });
-                sendSSE({ type: 'tool_use_done', tool_use_id: fakeId, content: `Reading ${skillSlug} SKILL.md`, is_error: false });
-            }
-
             // 鈹€鈹€ 1. Handle attachments: copy to workspace, append references to prompt 鈹€鈹€
             let finalPrompt = message;
             const imageFileNames = []; // image files copied to workspace
@@ -8134,7 +8119,7 @@ You have the following skills available. When a user's request matches a skill's
             }
 
             if (attachments && attachments.length > 0) {
-                for (const att of attachments) {
+                for (const [attachmentIndex, att] of attachments.entries()) {
                     // Skip virtual github attachments — they're not real uploaded files,
                     // the content is already materialized in workspace/github/ and injected via .github-context.json
                     if (att && (att.source === 'github' || att.fileType === 'github')) {
@@ -8146,22 +8131,52 @@ You have the following skills available. When a user's request matches a skill's
                         }
                         continue;
                     }
-                    if (!pendingImageBlocks.has(conversation_id)) pendingImageBlocks.set(conversation_id, []);
+                    const requestQueue = pendingImageBlocks.ensure(userMsgUuid);
+                    const beforeQueueLength = requestQueue.length;
+                    const beforeCreatedLength = requestCreatedFiles.length;
                     const result = processAttachmentEvidence({
                         attachment: att,
+                        attachmentIndex,
                         uploadRoots: [
                             path.join(workspacesDir, conversation_id, '.uploads'),
                             path.join(workspacesDir, 'temp', '.uploads'),
                         ],
                         workspacePath: conv.workspace_path,
                         ledger: evidenceLedger,
-                        pendingImageBlocks: pendingImageBlocks.get(conversation_id),
+                        pendingImageBlocks: requestQueue,
+                        createdFiles: requestCreatedFiles,
                     });
+                    for (const block of requestQueue.slice(beforeQueueLength)) inputTransaction.trackPendingImageBlock(block);
+                    for (const filePath of requestCreatedFiles.slice(beforeCreatedLength)) inputTransaction.trackCreatedFile(filePath);
                     if (result.access === 'model_image') imageFileNames.push(result.label);
                 }
             }
 
             const evidenceSnapshot = evidenceLedger.snapshot();
+            const inputEvidence = validateInputEvidence({
+                message,
+                attachments,
+                evidence: evidenceSnapshot,
+            });
+            if (!inputEvidence.ok) {
+                return rejectInputEvidence({ res, validation: inputEvidence, transaction: inputTransaction });
+            }
+            inputTransaction.applyStagedConversationConfig();
+
+            res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.flushHeaders();
+            activeStreams.set(conversation_id, { events: [], listeners: new Set(), done: false, primaryRes: res });
+            sendSSE = (data) => { var stream = activeStreams.get(conversation_id); if (stream) { stream.events.push(data); var line = 'data: ' + JSON.stringify(data) + '\n\n'; var arr = Array.from(stream.listeners); for (var i = 0; i < arr.length; i++) { try { arr[i].write(line); } catch (_) { stream.listeners.delete(arr[i]); } } } try { res.write('data: ' + JSON.stringify(data) + '\n\n'); } catch (_) {} };
+
+            const skillInvokeMatch = message.match(/^\/([a-zA-Z0-9_-]+)(\s|$)/);
+            if (skillInvokeMatch) {
+                const skillSlug = skillInvokeMatch[1];
+                const fakeId = 'skill-invoke-' + Date.now();
+                sendSSE({ type: 'tool_use_start', tool_use_id: fakeId, tool_name: 'Skill', tool_input: { skill: skillSlug } });
+                sendSSE({ type: 'tool_use_done', tool_use_id: fakeId, content: `Reading ${skillSlug} SKILL.md`, is_error: false });
+            }
             finalPrompt += `\n\n${evidenceLedger.toPromptBlock()}`;
 
             // 鈹€鈹€ 2. Save user message 鈹€鈹€
@@ -8171,19 +8186,18 @@ You have the following skills available. When a user's request matches a skill's
             // The `engineUuidSynced: true` flag marks this row as safe to rewind to;
             // pre-fix rows lack the flag and the delete handler falls back to a
             // clean-session reset for them.
-            const userMsgUuid = uuidv4();
             const persistedUserMessage = typeof display_message === 'string' && display_message.trim()
                 ? display_message
                 : message;
-            db.messages.push({
+            const persistedUserRow = {
                 id: userMsgUuid, conversation_id, role: 'user',
                 content: JSON.stringify([{ type: 'text', text: persistedUserMessage }]),
                 created_at: new Date().toISOString(),
                 engineUuidSynced: true,
                 evidence: evidenceSnapshot,
                 attachments: attachments && attachments.length > 0 ? attachments.map(a => ({ fileId: a.fileId, fileName: a.fileName, fileType: a.fileType, mimeType: a.mimeType, size: a.size, source: a.source, gh_repo: a.ghRepo, gh_ref: a.ghRef })) : undefined
-            });
-            saveDb();
+            };
+            inputTransaction.stageUserMessage(persistedUserRow);
 
             // 鈹€鈹€ 2.5. Research mode routing 鈹€鈹€
             // If conversation has research_mode enabled and the message looks like
@@ -8191,18 +8205,15 @@ You have the following skills available. When a user's request matches a skill's
             // bypass the engine entirely. Short messages, slash commands, and
             // greetings still go through the normal chat path.
             if (conv.research_mode && shouldRunResearch(message)) {
-                const config = resolveChatConfig(conv, user_mode, env_token, env_base_url);
-                console.log('[Research] Routing to orchestrator',
-                    '| conv=', conversation_id,
-                    '| model=', config.modelId,
-                    '| msgLen=', (message || '').length);
                 try {
-                    const result = await runResearchPipeline({
-                        query: finalPrompt,
-                        apiKey: config.apiKey,
-                        baseUrl: config.baseUrl,
-                        model: config.modelId,
-                        sendSSE,
+                    const result = await runResearchTransaction({
+                        transaction: inputTransaction,
+                        resolveConfig: () => resolveChatConfig(conv, user_mode, env_token, env_base_url),
+                        runResearch: async config => {
+                            console.log('[Research] Routing to orchestrator', '| conv=', conversation_id, '| model=', config.modelId, '| msgLen=', (message || '').length);
+                            return runResearchPipeline({ query: finalPrompt, apiKey: config.apiKey, baseUrl: config.baseUrl, model: config.modelId, sendSSE });
+                        },
+                        finishPending: () => pendingImageBlocks.finish(userMsgUuid),
                     });
                     // Save assistant message with the final report and research metadata
                     db.messages.push({
@@ -8289,9 +8300,6 @@ You have the following skills available. When a user's request matches a skill's
             engine.state = 'processing';
             engine.lastUsed = Date.now();
             console.log('[Chat] Turn starting', '| conv=', conversation_id, '| engine=', summarizeEngine(engine), '| promptLen=', finalPrompt.length);
-            if (config.apiFormat === 'openai' && proxyPort > 0) {
-                proxyTarget = { apiKey: config.apiKey, baseUrl: config.baseUrl, model: config.modelId, format: 'openai', conversationId: conversation_id, supportsWebSearch: config.supportsWebSearch === true, webSearchStrategy: config.webSearchStrategy || null };
-            }
             engine.turn = {
                 sendSSE, assistantText: '', thinkingText: '',
                 toolCalls: new Map(), toolCallOrder: [], sentToolStarts: new Set(),
@@ -8304,12 +8312,20 @@ You have the following skills available. When a user's request matches a skill's
                 lastActivityAt: Date.now(),
                 lastActivitySource: 'turn_start',
                 outputTokens: 0,
+                inputRequestId: userMsgUuid,
             };
 
+            // Persist reversibly after spawn succeeds. If stdin rejects the input,
+            // catch rolls this exact row/config back and persists the restoration.
+            inputTransaction.persist();
             // Write user message to stdin (stream-json format).
             // Reuse the same uuid as db.messages.id so the engine session uuid lines
             // up with our row — required for context rewind via --resume-session-at.
-            engine.child.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content: finalPrompt }, uuid: userMsgUuid }) + '\n');
+            if (engine.proxyContext) engine.proxyContext.inputRequestId = userMsgUuid;
+            await writeEngineInput(engine.child.stdin, JSON.stringify({ type: 'user', message: { role: 'user', content: finalPrompt }, uuid: userMsgUuid }) + '\n');
+            // The engine accepted the input synchronously; this is the normal-chat
+            // commit point for the staged config, message, and attachment ownership.
+            inputTransaction.commit();
 
             // Wait for turn to complete. Use an inactivity timeout so long-running
             // tasks can continue while they are still producing progress events.
@@ -8342,10 +8358,15 @@ You have the following skills available. When a user's request matches a skill's
             if (engine.turn && engine.turn.timeoutId) clearTimeout(engine.turn.timeoutId);
             if (engine.turn && engine.turn.maxTimeoutId) clearTimeout(engine.turn.maxTimeoutId);
                     } catch (err) {
-            pendingImageBlocks.delete(conversation_id);
+            inputTransaction.rollback();
+            if (inputTransaction.isCommitted()) pendingImageBlocks.finish(userMsgUuid);
             console.error('[Chat] Error:', (err.message || '').slice(0, 300));
-            sendSSE({ type: 'error', error: err.message || 'Engine error', ...(err.code ? { code: err.code } : {}) });
-            endStream(conversation_id);
+            if (sendSSE) {
+                sendSSE({ type: 'error', error: err.message || 'Engine error', ...(err.code ? { code: err.code } : {}) });
+                endStream(conversation_id);
+            } else if (!res.headersSent) {
+                res.status(500).json({ error: 'Input processing failed' });
+            }
         }
     });
 

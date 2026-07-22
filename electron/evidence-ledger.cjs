@@ -3,7 +3,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const SCHEMA = Object.freeze(['kind', 'status', 'access', 'label', 'reason']);
+const REQUIRED_SCHEMA = Object.freeze(['kind', 'status', 'access', 'label', 'reason']);
+const SCHEMA = Object.freeze([...REQUIRED_SCHEMA, 'attachment_index']);
 const ALLOWED = Object.freeze({
     kind: new Set(['user_text', 'attachment', 'github_workspace']),
     status: new Set(['available', 'unavailable']),
@@ -43,19 +44,27 @@ function createEvidenceLedger() {
         if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw new TypeError('证据条目必须是对象');
         const keys = Object.keys(entry);
         const unknown = keys.filter(key => !SCHEMA.includes(key));
-        const missing = SCHEMA.filter(key => !keys.includes(key));
+        const missing = REQUIRED_SCHEMA.filter(key => !keys.includes(key));
         if (unknown.length) throw new TypeError(`未知字段: ${unknown.join(', ')}`);
         if (missing.length) throw new TypeError(`缺少字段: ${missing.join(', ')}`);
         for (const key of ['kind', 'status', 'access', 'reason']) {
             if (!ALLOWED[key].has(entry[key])) throw new TypeError(`${key} 值不受支持`);
         }
-        return Object.freeze({
+        if (entry.kind === 'attachment' && (!Number.isInteger(entry.attachment_index) || entry.attachment_index < 0)) {
+            throw new TypeError('attachment_index must be a non-negative integer');
+        }
+        if (entry.attachment_index !== undefined && (!Number.isInteger(entry.attachment_index) || entry.attachment_index < 0)) {
+            throw new TypeError('attachment_index must be a non-negative integer');
+        }
+        const normalized = {
             kind: entry.kind,
             status: entry.status,
             access: entry.access,
             label: normalizeLabel(entry.label),
             reason: entry.reason,
-        });
+        };
+        if (entry.attachment_index !== undefined) normalized.attachment_index = entry.attachment_index;
+        return Object.freeze(normalized);
     }
 
     function record(entry) {
@@ -199,9 +208,9 @@ function resolveUploadedSource(fileId, uploadRoots, fileSystem) {
     return { reason: 'missing_source' };
 }
 
-function processAttachmentEvidence({ attachment, uploadRoots, workspacePath, ledger, pendingImageBlocks, fileSystem = fs, maxBytes = 25 * 1024 * 1024 }) {
+function processAttachmentEvidence({ attachment, attachmentIndex = 0, uploadRoots, workspacePath, ledger, pendingImageBlocks, createdFiles, fileSystem = fs, maxBytes = 25 * 1024 * 1024 }) {
     const reservation = ledger.reserve();
-    const finish = entry => reservation.commit(entry);
+    const finish = entry => reservation.commit({ ...entry, attachment_index: attachmentIndex });
     try {
     let safeLabel;
     try {
@@ -229,6 +238,7 @@ function processAttachmentEvidence({ attachment, uploadRoots, workspacePath, led
         }
         bytes = bounded.bytes;
         fileSystem.writeFileSync(destination, bytes, { flag: 'wx' });
+        if (Array.isArray(createdFiles)) createdFiles.push(destination);
     } catch (_) {
         return finish({ kind: 'attachment', status: 'unavailable', access: 'none', label: safeLabel, reason: 'copy_failed' });
     } finally {

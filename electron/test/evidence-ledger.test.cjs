@@ -31,9 +31,31 @@ test('accepts only the evidence schema and allowed enum values', () => {
     assert.equal(ledger.record({ ...valid, label: 'docs/report.md' }).label, 'docs/report.md');
 });
 
+test('attachment evidence requires a non-negative attachment_index while other evidence may omit it', () => {
+    const ledger = subject.createEvidenceLedger();
+    const base = { kind: 'attachment', status: 'available', access: 'workspace_file', label: 'safe', reason: 'copied_to_workspace' };
+    assert.throws(() => ledger.record(base), /attachment_index/);
+    assert.throws(() => ledger.record({ ...base, attachment_index: -1 }), /attachment_index/);
+    assert.throws(() => ledger.record({ ...base, attachment_index: 1.5 }), /attachment_index/);
+    assert.equal(ledger.record({ ...base, attachment_index: 3 }).attachment_index, 3);
+    assert.equal(ledger.record({ kind: 'user_text', status: 'available', access: 'text_supplied', label: 'text', reason: 'user_text_supplied' }).kind, 'user_text');
+});
+
+test('attachment processing records its original structured attachment index', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'evidence-index-'));
+    const uploads = path.join(root, '.uploads');
+    const workspace = path.join(root, 'workspace');
+    fs.mkdirSync(uploads); fs.mkdirSync(workspace);
+    fs.writeFileSync(path.join(uploads, 'doc'), 'hello');
+    const ledger = subject.createEvidenceLedger();
+    subject.processAttachmentEvidence({ attachment: { fileId: 'doc', fileName: 'doc.txt' }, attachmentIndex: 7, uploadRoots: [uploads], workspacePath: workspace, ledger, pendingImageBlocks: [] });
+    assert.equal(ledger.snapshot()[0].attachment_index, 7);
+    fs.rmSync(root, { recursive: true, force: true });
+});
+
 test('limits entries and labels by Unicode code points', () => {
     const ledger = subject.createEvidenceLedger();
-    const entry = { kind: 'attachment', status: 'available', access: 'workspace_file', label: '😀'.repeat(161), reason: 'copied_to_workspace' };
+    const entry = { kind: 'attachment', status: 'available', access: 'workspace_file', label: '😀'.repeat(161), reason: 'copied_to_workspace', attachment_index: 0 };
     const recorded = ledger.record(entry);
     assert.equal([...recorded.label].length, 160);
     for (let i = 1; i < 64; i += 1) ledger.record({ ...entry, label: `file-${i}` });
@@ -53,14 +75,14 @@ test('returns a deeply immutable detached snapshot', () => {
 test('a reservation is released when commit normalization fails', () => {
     const ledger = subject.createEvidenceLedger();
     const reservation = ledger.reserve();
-    assert.throws(() => reservation.commit({ kind: 'attachment', status: 'available', access: 'workspace_file', label: '..', reason: 'copied_to_workspace' }), /label/);
-    for (let i = 0; i < 64; i += 1) ledger.record({ kind: 'attachment', status: 'available', access: 'workspace_file', label: `file-${i}`, reason: 'copied_to_workspace' });
+    assert.throws(() => reservation.commit({ kind: 'attachment', status: 'available', access: 'workspace_file', label: '..', reason: 'copied_to_workspace', attachment_index: 0 }), /label/);
+    for (let i = 0; i < 64; i += 1) ledger.record({ kind: 'attachment', status: 'available', access: 'workspace_file', label: `file-${i}`, reason: 'copied_to_workspace', attachment_index: i });
     assert.equal(ledger.snapshot().length, 64);
 });
 
 test('prompt contract contains only metadata and visibility rules', () => {
     const ledger = subject.createEvidenceLedger();
-    ledger.record({ kind: 'attachment', status: 'unavailable', access: 'none', label: 'safe.txt', reason: 'missing_source' });
+    ledger.record({ kind: 'attachment', status: 'unavailable', access: 'none', label: 'safe.txt', reason: 'missing_source', attachment_index: 0 });
     const block = ledger.toPromptBlock();
     assert.match(block, /^<evidence_ledger>/);
     assert.match(block, /只有 access=model_image/);
@@ -304,7 +326,7 @@ test('image queue and ledger stay consistent when the ledger is full', () => {
     fs.mkdirSync(workspace);
     fs.writeFileSync(path.join(uploads, 'photo-id'), Buffer.alloc(101, 1));
     const ledger = subject.createEvidenceLedger();
-    for (let i = 0; i < 64; i += 1) ledger.record({ kind: 'attachment', status: 'available', access: 'workspace_file', label: `file-${i}`, reason: 'copied_to_workspace' });
+    for (let i = 0; i < 64; i += 1) ledger.record({ kind: 'attachment', status: 'available', access: 'workspace_file', label: `file-${i}`, reason: 'copied_to_workspace', attachment_index: i });
     const pending = [];
     assert.throws(() => subject.processAttachmentEvidence({ attachment: { fileId: 'photo-id', fileName: 'photo.png' }, uploadRoots: [uploads], workspacePath: workspace, ledger, pendingImageBlocks: pending }), /64/);
     assert.equal(pending.length, 0);
@@ -321,7 +343,7 @@ test('a full ledger rejects a regular file before creating its destination', () 
     fs.mkdirSync(workspace);
     fs.writeFileSync(path.join(uploads, 'doc-id'), 'hello');
     const ledger = subject.createEvidenceLedger();
-    for (let i = 0; i < 64; i += 1) ledger.record({ kind: 'attachment', status: 'available', access: 'workspace_file', label: `file-${i}`, reason: 'copied_to_workspace' });
+    for (let i = 0; i < 64; i += 1) ledger.record({ kind: 'attachment', status: 'available', access: 'workspace_file', label: `file-${i}`, reason: 'copied_to_workspace', attachment_index: i });
     assert.throws(() => subject.processAttachmentEvidence({ attachment: { fileId: 'doc-id', fileName: 'doc.txt' }, uploadRoots: [uploads], workspacePath: workspace, ledger, pendingImageBlocks: [] }), /64/);
     assert.equal(fs.existsSync(path.join(workspace, 'doc.txt')), false);
     assert.equal(ledger.snapshot().length, 64);
@@ -367,7 +389,7 @@ test('an invalid attachment label terminates its reservation before file side ef
     const result = subject.processAttachmentEvidence({ attachment: { fileId: 'doc-id', fileName: '..' }, uploadRoots: [uploads], workspacePath: workspace, ledger, pendingImageBlocks: [] });
     assert.equal(result.reason, 'invalid_label');
     assert.equal(fs.readdirSync(workspace).length, 0);
-    for (let i = 1; i < 64; i += 1) ledger.record({ kind: 'attachment', status: 'available', access: 'workspace_file', label: `file-${i}`, reason: 'copied_to_workspace' });
+    for (let i = 1; i < 64; i += 1) ledger.record({ kind: 'attachment', status: 'available', access: 'workspace_file', label: `file-${i}`, reason: 'copied_to_workspace', attachment_index: i });
     assert.equal(ledger.snapshot().length, 64);
     fs.rmSync(root, { recursive: true, force: true });
 });
