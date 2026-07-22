@@ -18,6 +18,7 @@ const { createPendingInputImages, injectPendingInputImages } = require('./pendin
 const { createProxyContextRegistry } = require('./proxy-context-registry.cjs');
 const { registerCapabilityDiagnosticsRoute } = require('./capability-diagnostics.cjs');
 const { createWindowsCredentialStore, createProviderCredentialManager } = require('./windows-credential-store.cjs');
+const { registerCheckpointRoute } = require('./checkpoint-api.cjs');
 
 // Heuristic: when research_mode is enabled, decide whether THIS message
 // should actually trigger the research pipeline. Greetings, very short
@@ -2768,6 +2769,11 @@ if __name__ == "__main__":
         } catch {
             res.status(404).json({ error: 'File not found' });
         }
+    });
+
+    registerCheckpointRoute(server, {
+        getConversation: id => db.conversations.find(conversation => conversation.id === id) || null,
+        getMessages: id => db.messages.filter(message => message.conversation_id === id),
     });
 
     server.get('/api/conversations', (req, res) => {
