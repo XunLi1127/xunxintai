@@ -12,6 +12,7 @@ describe('洵心台应用图标', () => {
     expect(pkg.build.win.icon).toBe('public/xunxintai.ico');
     expect(pkg.build.mac.icon).toBe('public/xunxintai-1024.png');
     expect(pkg.build.linux.icon).toBe('public/xunxintai-512.png');
+    expect(pkg.build.nsis.include).toBe('build/installer.nsh');
     expect(pkg.build.extraResources).toEqual(expect.arrayContaining([
       expect.objectContaining({ from: 'public/xunxintai.ico', to: 'assets/xunxintai.ico' }),
       expect.objectContaining({ from: 'public/xunxintai-256.png', to: 'assets/xunxintai-256.png' }),
@@ -23,6 +24,19 @@ describe('洵心台应用图标', () => {
     expect(main).toContain("getRuntimeIconPath('xunxintai.ico')");
     expect(main).toContain("getRuntimeIconPath('xunxintai-256.png')");
     expect(`${index}\n${main}\n${JSON.stringify(pkg.build)}`).not.toMatch(/(?:^|[/\\])favicon\.(?:ico|png)/i);
+  });
+
+  it('NSIS 默认使用当前用户下的 ASCII 安装目录', () => {
+    const include = read('build/installer.nsh');
+    expect(include).toContain('!macro preInit');
+    expect(include).toContain('!ifndef BUILD_UNINSTALLER');
+    expect(include).toContain('WriteRegStr HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation "$LOCALAPPDATA\\Programs\\Xunxintai"');
+  });
+
+  it('public 不再携带未引用的旧应用品牌资产', () => {
+    for (const oldAsset of ['public/favicon.ico', 'public/favicon.png', 'public/anthropic.svg']) {
+      expect(fs.existsSync(path.join(root, oldAsset)), oldAsset).toBe(false);
+    }
   });
 
   it('母版是无文字且不含旧品牌标识的确定性 SVG', () => {

@@ -1,11 +1,11 @@
-# 主程序 MVP 任务 5 报告
+# 主程序 MVP 任务 5 报告（默认安装收尾）
 
 ## 构建产物
 
 - 安装包：`release/Xunxintai-Setup-1.6.31-x64.exe`
-- 大小：215,063,120 字节
-- SHA-256：`38FD8D975C065FD26871EFCF6B24E7DB9AC32224B87535A4053F8DE5990CC2CC`
-- Windows 解包主程序：222,730,240 字节，SHA-256 `747E8244A41910355BDC490E36F3C10BEA20D67E7D4E0E4D6305CDE00A863B4F`
+- 大小：214,843,019 字节
+- SHA-256：`F3842AFBDD34274DAAE0826922EECD4769AE4C32CE4AF1660C22D235AA7AFE59`
+- Windows 解包主程序：222,730,240 字节，SHA-256 `B01BB2763D9B7A532F43F6DBEA5C1C28F607CE3406C6261BEABA3D6D090FA6AB`
 - 身份：appId `com.xunxintai.desktop`，productName/PE ProductName/FileDescription 为“洵心台”，artifactName 为 `Xunxintai-Setup-${version}-${arch}.${ext}`。
 - Authenticode：安装包与主程序均为 `NotSigned`，符合未签名测试版边界。
 
@@ -26,7 +26,7 @@
 
 ## 本机部署与烟测
 
-- 安装目录：`C:\Users\13477\AppData\Local\Programs\XunxintaiTest`
+- 默认安装目录：`C:\Users\13477\AppData\Local\Programs\Xunxintai`
 - 已安装 `洵心台.exe` SHA-256 与 win-unpacked 主程序一致。
 - 已安装 Bun 版本 `1.3.14`，engine/node_modules、engine/src、preload 与新品牌图标均存在。
 - 启动后 12 秒主进程仍存活，并观察到 GPU、utility、renderer 子进程。
@@ -38,11 +38,13 @@
 
 首次构建在解压官方 `winCodeSign-2.6.0.7z` 时因当前 Windows 会话没有符号链接权限而 exit 2，仅失败于 macOS 的 `libcrypto.dylib` 与 `libssl.dylib`。归档中的实际目标文件完整，最小处理是将两个链接目标复制为等价普通文件并建立 electron-builder 约定缓存；原构建命令随后完整通过，未绕过 beforePack 或运行时校验。
 
-首次执行安装包仅带 `/S` 时 exit `0xC0000005`，WER 指向临时 `System.dll` 偏移 `0x1581`；安装包完整性测试通过。无 `/S` 的安装器初始化保持运行，`/S /D=<ASCII 当前用户目录>` 完整写入 23,590 文件、832,996,810 字节并创建卸载项，故障被隔离到 NSIS 默认目录/既有安装发现分支。本次测试部署使用显式 `/D`，旧 Claude 安装与数据未改动。
+初版仅带 `/S` 时曾在 NSIS `System.dll` 中异常退出；当时只证明显式 ASCII `/D` 安装可行，未对原因作最终断言。随后依据 electron-builder 26.8.1 的 `nsis.include` 官方扩展点，在 `preInit` 为本应用预置当前用户 ASCII 安装位置，避免进入该不稳定路径。新版安装包已使用裸 `/S`（不带 `/D`）完整安装到默认目录，写入 23,593 个文件、832,784,625 字节并创建卸载项。旧 Claude 安装与数据未改动。
+
+安装版与 `win-unpacked` 的 Chromium DOM 均为 ready，React 根节点已渲染“选择外观”页面；两者 CDP 截图逐字节一致。Computer Use 对该 Electron 窗口的透明捕获结果属于捕获兼容现象，不是产品空白页。
 
 ## 验证结果
 
-- `npm test`：10 个文件、66 个测试通过。
+- `npm test`：10 个文件、68 个测试通过。
 - `npm run test:electron`：62 个测试通过。
 - `npm.cmd run build`：通过。
 - `npm run electron:build:win`：通过。
