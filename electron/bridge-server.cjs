@@ -7573,6 +7573,7 @@ You have the following skills available. When a user's request matches a skill's
     // ============ PERSISTENT ENGINE POOL ============
     const MAX_ENGINE_POOL_SIZE = 3;
     const enginePool = new Map();
+    const engineLifecycle = require('./engine-lifecycle.cjs').createEngineLifecycle({ enginePool, activeChildren });
     const HIDDEN_TOOLS = new Set(['EnterWorktree', 'ExitWorktree', 'TodoWrite', 'WebSearch', 'WebFetch']);
 
     function summarizeEngine(eng) {
@@ -7604,10 +7605,7 @@ You have the following skills available. When a user's request matches a skill's
             '| engine=', summarizeEngine(eng),
             '| pool=', summarizeEnginePool(),
             '| caller=', stackLines);
-        try { eng.child.stdin.end(); } catch (_) {}
-        try { eng.child.kill(); } catch (_) {}
-        enginePool.delete(convId);
-        activeChildren.delete(convId);
+        engineLifecycle.kill(convId, eng);
     }
     function evictOldestEngine() {
         if (enginePool.size < MAX_ENGINE_POOL_SIZE) return;
@@ -7960,7 +7958,6 @@ You have the following skills available. When a user's request matches a skill's
             readyPromise,
             resolveReady,
         };
-        activeChildren.set(convId, child);
 
         const handleEngineStdoutLine = (line) => {
             if (!line || !line.trim()) return;
@@ -8010,7 +8007,7 @@ You have the following skills available. When a user's request matches a skill's
                 }
                 finishTurn(engine, convId, conv);
             }
-            enginePool.delete(convId); activeChildren.delete(convId);
+            engineLifecycle.remove(convId, engine);
         });
         child.on('error', (err) => {
             console.error('[EnginePool] Error:', err.message);
@@ -8019,12 +8016,12 @@ You have the following skills available. When a user's request matches a skill's
                 if (engine.turn.sendSSE) engine.turn.sendSSE({ type: 'error', error: err.message || 'Engine error' });
                 finishTurn(engine, convId, conv);
             }
-            enginePool.delete(convId); activeChildren.delete(convId);
+            engineLifecycle.remove(convId, engine);
         });
         child.on('spawn', () => {
             console.log('[EnginePool] Child spawned', '| conv=', convId, '| pid=', child.pid, '| model=', modelId);
         });
-        enginePool.set(convId, engine);
+        engineLifecycle.register(convId, engine);
         return engine;
     }
 
@@ -8364,6 +8361,7 @@ You have the following skills available. When a user's request matches a skill's
     });
 
 
+    server.shutdownEngines = engineLifecycle.shutdown;
     return server;
 }
 

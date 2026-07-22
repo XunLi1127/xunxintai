@@ -20,6 +20,7 @@ try {
 } catch (_) {}
 
 const { initServer, enableNodeModeForChildProcesses } = require('./bridge-server.cjs');
+const { createBridgeShutdown, createQuitCoordinator } = require('./engine-lifecycle.cjs');
 
 // Fix Chinese garbled text in Windows console by switching to UTF-8 code page
 if (process.platform === 'win32') {
@@ -33,6 +34,12 @@ if (process.platform === 'win32') {
 let mainWindow;
 let tray = null;
 let isQuitting = false;
+let shutdownBridge = () => Promise.resolve();
+const coordinateQuit = createQuitCoordinator({
+    shutdown: () => shutdownBridge(),
+    quit: () => app.quit(),
+    logError: (error) => console.error('[Bridge] Shutdown failed:', error.message),
+});
 let hasShownTrayHint = false;
 const petManager = new PetManager();
 
@@ -454,10 +461,11 @@ app.whenReady().then(() => {
     }
 
     // Start Bridge Server
-    const server = initServer();
-    server.listen(30080, '127.0.0.1', () => {
+    const bridge = initServer();
+    const server = bridge.listen(30080, '127.0.0.1', () => {
         console.log('Bridge Server running on http://127.0.0.1:30080');
     });
+    shutdownBridge = createBridgeShutdown({ server, shutdownEngines: bridge.shutdownEngines });
 
     createTray();
     createWindow();
@@ -532,9 +540,10 @@ app.whenReady().then(() => {
     });
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
     isQuitting = true;
     petManager.stop();
+    coordinateQuit(event);
 });
 
 app.on('window-all-closed', () => {
@@ -551,10 +560,11 @@ ipcMain.handle('pet:start', () => petManager.start());
 ipcMain.handle('pet:stop', () => petManager.stop());
 ipcMain.handle('pet:update-settings', (_, settings) => petManager.updateSettings(settings));
 ipcMain.handle('pet:export-diagnostics', () => petManager.exportDiagnostics());
-ipcMain.handle('install-update', () => {
+ipcMain.handle('install-update', async () => {
     // On Mac, autoUpdater.quitAndInstall() doesn't reliably relaunch the app.
     // Use app.relaunch() + app.exit() to ensure the app restarts on all platforms.
     if (process.platform === 'darwin') {
+        await shutdownBridge();
         app.relaunch();
         app.exit(0);
     } else {
