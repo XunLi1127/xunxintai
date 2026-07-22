@@ -1320,7 +1320,7 @@ export function warmEngine(conversationId: string): void {
 // ===== Provider Management =====
 export interface ProviderModel { id: string; name: string; enabled?: boolean; }
 export interface Provider {
-  id: string; name: string; apiKey: string; baseUrl: string;
+  id: string; name: string; apiKey?: string; hasCredential?: boolean; baseUrl: string;
   format: 'anthropic' | 'openai'; models: ProviderModel[]; enabled: boolean;
   icon?: string;
   supportsWebSearch?: boolean;

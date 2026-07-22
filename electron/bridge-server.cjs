@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { v4: uuidv4 } = require('uuid');
-const { app } = require('electron');
+const { app, safeStorage } = require('electron');
 const { execFileSync, spawnSync } = require('child_process');
 const { createHash } = require('crypto');
 const { TOOL_DEFINITIONS, executeTool, setAccessConfigPath } = require('./tools.cjs');
@@ -17,6 +17,7 @@ const { createInputRequestTransaction, rejectInputEvidence, writeEngineInput, ru
 const { createPendingInputImages, injectPendingInputImages } = require('./pending-input-images.cjs');
 const { createProxyContextRegistry } = require('./proxy-context-registry.cjs');
 const { registerCapabilityDiagnosticsRoute } = require('./capability-diagnostics.cjs');
+const { createWindowsCredentialStore, createProviderCredentialManager } = require('./windows-credential-store.cjs');
 
 // Heuristic: when research_mode is enabled, decide whether THIS message
 // should actually trigger the research pipeline. Greetings, very short
@@ -1503,6 +1504,14 @@ if __name__ == "__main__":
         }
     } catch (_) {}
     const saveProviders = () => fs.writeFileSync(providersPath, JSON.stringify(providers, null, 2));
+    const providerCredentialStore = createWindowsCredentialStore({
+        safeStorage,
+        fs,
+        filePath: path.join(userDataPath, 'provider-credentials.json'),
+    });
+    const providerCredentials = createProviderCredentialManager({ store: providerCredentialStore });
+    try { providerCredentials.migrate(providers, saveProviders); }
+    catch (error) { console.warn('[Provider] Credential migration unavailable:', error.code || 'CREDENTIAL_MIGRATION_FAILED'); }
 
     // Resolve provider + key + url for a given model ID
     function resolveProvider(modelId, providerId) {
@@ -3404,18 +3413,23 @@ if __name__ == "__main__":
             return provider;
         });
         if (changed) saveProviders();
-        res.json(providers);
+        res.json(providers.map(provider => providerCredentials.toPublic(provider)));
     });
     server.post('/api/providers', (req, res) => {
-        const p = req.body;
+        const p = {};
         p.id = uuidv4();
-        if (!p.name) return res.status(400).json({ error: 'Missing name' });
-        if (!p.models) p.models = [];
-        if (p.enabled === undefined) p.enabled = true;
-        normalizeProviderRecord(p);
-        providers.push(p);
-        saveProviders();
-        res.json(p);
+        if (!req.body || !req.body.name) return res.status(400).json({ error: 'Missing name' });
+        try {
+            providerCredentials.applyInput(p, req.body, () => {
+                if (!p.models) p.models = [];
+                if (p.enabled === undefined) p.enabled = true;
+                normalizeProviderRecord(p);
+                providers.push(p);
+                try { saveProviders(); } catch (error) { providers = providers.filter(item => item !== p); throw error; }
+            });
+        }
+        catch (error) { return res.status(503).json({ error: 'Credential storage unavailable', code: error.code || 'CREDENTIAL_WRITE_FAILED' }); }
+        res.json(providerCredentials.toPublic(p));
     });
     server.patch('/api/providers/:id', (req, res) => {
         const p = providers.find(x => x.id === req.params.id);
@@ -3431,10 +3445,8 @@ if __name__ == "__main__":
                 modelsCount: Array.isArray(req.body && req.body.models) ? req.body.models.length : undefined,
             }).slice(0, 500),
             '| poolBefore=', summarizeEnginePool());
-        Object.assign(p, req.body);
-        normalizeProviderRecord(p);
-        delete p._id; // prevent duplication
-        saveProviders();
+        try { providerCredentials.applyInput(p, req.body || {}, () => { normalizeProviderRecord(p); delete p._id; saveProviders(); }); }
+        catch (error) { return res.status(503).json({ error: 'Credential storage unavailable', code: error.code || 'CREDENTIAL_WRITE_FAILED' }); }
         // Refresh idle engines immediately, but don't kill active turns mid-response.
         // Active engines are marked stale and will be restarted on the next turn/warm.
         for (const [id, eng] of enginePool) {
@@ -3445,12 +3457,15 @@ if __name__ == "__main__":
                 killEngine(id, 'provider_updated_idle_engine', { providerId: req.params.id, changedKeys: Object.keys(req.body || {}) });
             }
         }
-        res.json(p);
+        res.json(providerCredentials.toPublic(p));
     });
     server.delete('/api/providers/:id', (req, res) => {
         console.log('[Providers] DELETE', req.params.id, '| poolBefore=', summarizeEnginePool());
-        providers = providers.filter(x => x.id !== req.params.id);
-        saveProviders();
+        const removed = providers.find(x => x.id === req.params.id);
+        if (removed) {
+            try { providerCredentials.removeProvider(providers, removed, saveProviders); }
+            catch (error) { return res.status(503).json({ error: 'Credential storage unavailable', code: error.code || 'CREDENTIAL_DELETE_FAILED' }); }
+        }
         for (const [id, eng] of enginePool) {
             if (eng.state === 'processing') {
                 eng.needsRestart = true;
@@ -3677,19 +3692,22 @@ if __name__ == "__main__":
     }
 
     server.post('/api/providers/:id/test-websearch', async (req, res) => {
-        const p = providers.find(x => x.id === req.params.id);
-        if (!p) return res.status(404).json({ error: 'Provider not found' });
-        if (!p.baseUrl || !p.apiKey) return res.json({ ok: false, reason: 'Missing baseUrl or apiKey' });
+        const storedProvider = providers.find(x => x.id === req.params.id);
+        if (!storedProvider) return res.status(404).json({ error: 'Provider not found' });
+        let p;
+        try { p = { ...storedProvider, apiKey: providerCredentials.resolve(storedProvider) }; }
+        catch (_) { return res.json({ ok: false, reason: 'Missing provider credential' }); }
+        if (!p.baseUrl) return res.json({ ok: false, reason: 'Missing baseUrl' });
         console.log('[WebSearchProbe] Testing provider:', p.name, '| format:', p.format);
         try {
             const result = p.format === 'anthropic'
                 ? await probeAnthropicWebSearch(p)
                 : await probeOpenAIWebSearch(p);
             console.log('[WebSearchProbe] Result:', p.name, '→', JSON.stringify(result));
-            p.supportsWebSearch = !!result.ok;
-            p.webSearchStrategy = result.strategy || null;
-            p.webSearchTestedAt = Date.now();
-            p.webSearchTestReason = result.reason || null;
+            storedProvider.supportsWebSearch = !!result.ok;
+            storedProvider.webSearchStrategy = result.strategy || null;
+            storedProvider.webSearchTestedAt = Date.now();
+            storedProvider.webSearchTestReason = result.reason || null;
             saveProviders();
             res.json(result);
         } catch (err) {
@@ -7685,7 +7703,7 @@ You have the following skills available. When a user's request matches a skill's
         let supportsWebSearch = false;
         let webSearchStrategy = null;
         if (provider) {
-            apiKey = provider.apiKey; baseUrl = provider.baseUrl; apiFormat = provider.format || 'anthropic';
+            apiKey = providerCredentials.resolve(provider); baseUrl = provider.baseUrl; apiFormat = provider.format || 'anthropic';
             // Web search is gated by the stored probe result — no implicit support based on format.
             supportsWebSearch = provider.supportsWebSearch === true;
             webSearchStrategy = provider.webSearchStrategy || null;

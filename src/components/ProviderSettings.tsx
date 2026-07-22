@@ -766,7 +766,7 @@ const ProviderSettings: React.FC = () => {
                       type={showKeyMap[selected.id] ? 'text' : 'password'}
                       value={selected.apiKey || ''}
                       onChange={e => handleUpdate(selected.id, { apiKey: e.target.value })}
-                      placeholder="sk-..."
+                      placeholder={selected.hasCredential ? '已安全保存；输入可替换' : 'sk-...'}
                       className="flex-1 bg-transparent border border-claude-border rounded-[8px] px-3 py-2 text-[14px] text-claude-text outline-none focus:border-[#387ee0]/60 transition-colors placeholder:text-claude-textSecondary/40 font-mono"
                     />
                     <button
@@ -874,7 +874,7 @@ const ProviderSettings: React.FC = () => {
                         </div>
                         <button
                           onClick={() => handleTestWebSearch(selected.id)}
-                          disabled={isTesting || !selected.apiKey || !selected.baseUrl}
+                          disabled={isTesting || (!selected.hasCredential && !selected.apiKey) || !selected.baseUrl}
                           className="flex-shrink-0 px-3 py-1.5 text-[11.5px] font-medium rounded-lg border border-claude-border/60 text-claude-textSecondary hover:text-claude-text hover:bg-claude-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           {isTesting ? '测试中...' : hasTested ? '重新测试' : '测试'}
