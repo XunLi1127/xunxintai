@@ -2043,46 +2043,61 @@ export async function sendMessage(
   try {
     const effectiveMode = inferUserModeFromModel(requestExtras?.model) || getUserModeForConversation(conversationId);
     const effectiveProviderId = requestExtras?.providerId || getProviderIdForModel(requestExtras?.model);
-    const res = await fetch(`${API_BASE}/chat`, {
+    const buildRequestBody = (includeUserProfile: boolean) => ({
+      conversation_id: conversationId,
+      message,
+      display_message: requestExtras?.displayMessage,
+      model: requestExtras?.model,
+      provider_id: effectiveProviderId,
+      attachments: attachments || undefined,
+      ...resolveEnvCreds(effectiveMode),
+      user_mode: effectiveMode,
+      user_profile: includeUserProfile ? (() => {
+        try {
+          const p = JSON.parse(localStorage.getItem('user_profile') || localStorage.getItem('user') || '{}');
+          const wf = p.work_function;
+          const pp = p.personal_preferences;
+          const responseStyle = getEffectiveChatStyle(conversationId);
+          return (wf || pp || responseStyle) ? {
+            work_function: wf,
+            personal_preferences: pp,
+            response_style: responseStyle ? {
+              id: responseStyle.id,
+              name: responseStyle.name,
+              instructions: responseStyle.instructions,
+            } : undefined,
+          } : undefined;
+        } catch { return undefined; }
+      })() : undefined,
+    });
+    const requestOptions = (includeUserProfile: boolean): RequestInit => ({
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({
-        conversation_id: conversationId,
-        message,
-        display_message: requestExtras?.displayMessage,
-        model: requestExtras?.model,
-        provider_id: effectiveProviderId,
-        attachments: attachments || undefined,
-        ...resolveEnvCreds(effectiveMode),
-        user_mode: effectiveMode,
-        user_profile: (() => {
-          try {
-            const p = JSON.parse(localStorage.getItem('user_profile') || localStorage.getItem('user') || '{}');
-            const wf = p.work_function;
-            const pp = p.personal_preferences;
-            const responseStyle = getEffectiveChatStyle(conversationId);
-            return (wf || pp || responseStyle) ? {
-              work_function: wf,
-              personal_preferences: pp,
-              response_style: responseStyle ? {
-                id: responseStyle.id,
-                name: responseStyle.name,
-                instructions: responseStyle.instructions,
-              } : undefined,
-            } : undefined;
-          } catch { return undefined; }
-        })(),
-      }),
+      body: JSON.stringify(buildRequestBody(includeUserProfile)),
       signal,
     });
+    let res = await fetch(`${API_BASE}/chat`, requestOptions(true));
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: '请求失败' }));
-      onError(err.error || '请求失败');
-      return;
+      let err: any;
+      try {
+        err = await res.json();
+      } catch {
+        const firstStatus = res.status;
+        res = await fetch(`${API_BASE}/chat`, requestOptions(false));
+        if (!res.ok) {
+          const retryErr = await res.json().catch(() => ({}));
+          onError(retryErr.error || `请求失败（HTTP ${firstStatus}，精简重试 HTTP ${res.status}）`);
+          return;
+        }
+      }
+      if (err) {
+        onError(err.error || `请求失败（HTTP ${res.status}）`);
+        return;
+      }
     }
 
     if (!res.body) return;
