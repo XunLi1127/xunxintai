@@ -2087,15 +2087,19 @@ export async function sendMessage(
         err = await res.json();
       } catch {
         const firstStatus = res.status;
+        if (firstStatus !== 413) {
+          onError(`请求失败（HTTP ${firstStatus}）`);
+          return;
+        }
         res = await fetch(`${API_BASE}/chat`, requestOptions(false));
         if (!res.ok) {
           const retryErr = await res.json().catch(() => ({}));
-          onError(retryErr.error || `请求失败（HTTP ${firstStatus}，精简重试 HTTP ${res.status}）`);
+          onError(retryErr?.error || `请求失败（HTTP ${firstStatus}，精简重试 HTTP ${res.status}）`);
           return;
         }
       }
       if (err) {
-        onError(err.error || `请求失败（HTTP ${res.status}）`);
+        onError(err?.error || `请求失败（HTTP ${res.status}）`);
         return;
       }
     }

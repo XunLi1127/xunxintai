@@ -14,7 +14,7 @@ describe('chat request fallback', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce({
         ok: false,
-        status: 502,
+        status: 413,
         headers: { get: () => 'text/plain' },
         json: async () => { throw new Error('not json'); },
       } as Response)
@@ -53,5 +53,27 @@ describe('chat request fallback', () => {
     expect(retryBody.model).toBe('deepseek-v4-pro');
     expect(retryBody.provider_id).toBe('provider-id');
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('does not retry an ambiguous non-JSON gateway failure', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 502,
+      headers: { get: () => 'text/html' },
+      json: async () => { throw new Error('not json'); },
+    } as Response);
+    const onError = vi.fn();
+
+    await sendMessage(
+      'conversation-id',
+      'hello',
+      null,
+      vi.fn(),
+      vi.fn(),
+      onError,
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith('请求失败（HTTP 502）');
   });
 });
