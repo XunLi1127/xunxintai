@@ -19,6 +19,7 @@ const { createProxyContextRegistry } = require('./proxy-context-registry.cjs');
 const { registerCapabilityDiagnosticsRoute } = require('./capability-diagnostics.cjs');
 const { createWindowsCredentialStore, createProviderCredentialManager } = require('./windows-credential-store.cjs');
 const { registerCheckpointRoute } = require('./checkpoint-api.cjs');
+const { buildConversationTimeContext } = require('./conversation-time-context.cjs');
 
 // Heuristic: when research_mode is enabled, decide whether THIS message
 // should actually trigger the research pipeline. Greetings, very short
@@ -8193,6 +8194,11 @@ You have the following skills available. When a user's request matches a skill's
             if (!inputEvidence.ok) {
                 return rejectInputEvidence({ res, validation: inputEvidence, transaction: inputTransaction });
             }
+            const timeContext = buildConversationTimeContext({
+                now: new Date(),
+                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                messages: db.messages.filter(item => item.conversation_id === conversation_id),
+            });
             inputTransaction.applyStagedConversationConfig();
 
             res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -8210,6 +8216,7 @@ You have the following skills available. When a user's request matches a skill's
                 sendSSE({ type: 'tool_use_done', tool_use_id: fakeId, content: `Reading ${skillSlug} SKILL.md`, is_error: false });
             }
             finalPrompt += `\n\n${evidenceLedger.toPromptBlock()}`;
+            if (timeContext.promptBlock) finalPrompt += `\n\n${timeContext.promptBlock}`;
 
             // 鈹€鈹€ 2. Save user message 鈹€鈹€
             // Generate the uuid here so we can pass the SAME uuid to engine stdin
